@@ -1,0 +1,17 @@
+{
+  "details": {
+    "chunking_version": "v2_role_level_2026-02-12",
+    "embedding_model": "text-embedding-3-small",
+    "resume": {
+      "mtime": 1770707487,
+      "path": "resume.pdf",
+      "size": 144975
+    },
+    "summary": {
+      "mtime": 1770707487,
+      "path": "summary.txt",
+      "size": 603
+    }
+  },
+  "fingerprint": "318c88e5168b27bb2fac986a72cee077593a8700c39b5d87e5a0e6ccb1a4f03a"
+}
