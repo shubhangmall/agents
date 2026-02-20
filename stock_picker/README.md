@@ -1,5 +1,7 @@
 # StockPicker Crew
 
+*Part of the multi-agent portfolio by Shubhang Mall.*
+
 Welcome to the StockPicker Crew project, powered by [crewAI](https://crewai.com).
 
 ## Installation

@@ -1,0 +1,15 @@
+[project]
+name = "career_chatbot"
+version = "0.1.0"
+description = "Career chatbot with RAG"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "python-dotenv",
+    "gradio==5.34.2",
+    "pypdf",
+    "openai",
+    "openai-agents",
+    "chromadb",
+]
