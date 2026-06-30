@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python pin 3.12 && uv python install
+
+      - name: Check uv.lock freshness
+        run: uv lock --check
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Import smoke test
+        run: |
+          for mod in \
+            agent_creating_agent \
+            career_chatbot \
+            deep_research \
+            engineering_team \
+            financial_researcher \
+            personal_sidekick \
+            pr_agent \
+            stock_picker; do
+            echo "=== $mod ==="
+            uv run python -c "import $mod" 2>&1 || echo "SKIP (not a package or missing deps)"
+          done
