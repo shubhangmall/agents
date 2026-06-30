@@ -11,6 +11,7 @@ Welcome to the **agents** repository—a showcase of advanced, production‑grad
 
 - `agent_creating_agent/` – experimental framework where agents generate and improve other agents. Includes 20+ sample agents and a `world.py` orchestrator.
 - `deep_research/` – an end‑to‑end research assistant that plans, searches the web, writes reports, and even emails results.
+- `pr_agent/` – PR merge-readiness agent that triages CI failures and review comments, proposes scoped fixes, and optionally posts a summary comment.
 - `career_chatbot/` – interactive career advice bot with résumé RAG and personalized context.
 - `personal_sidekick/` – personal co‑worker with long‑term memory and tool integration.
 - `engineering_team/`, `financial_researcher/`, `stock_picker/` – crewAI‑based multi‑agent crews solving engineering tasks, financial analysis, and stock recommendations.

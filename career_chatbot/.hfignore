@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.chroma/
+.chroma_index_meta.json
+.git/
+.DS_Store
