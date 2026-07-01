@@ -1,7 +1,6 @@
 import os
 
 from agents import Agent
-
 from models import BabysitReport
 
 INSTRUCTIONS = """You are a PR merge-readiness reporter. Given triaged issues and proposed fixes,

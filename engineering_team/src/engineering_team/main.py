@@ -1,15 +1,13 @@
 #!/usr/bin/env python
-import sys
-import warnings
 import os
-from datetime import datetime
+import warnings
 
 from engineering_team.crew import EngineeringTeam
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 # Create output directory if it doesn't exist
-os.makedirs('output', exist_ok=True)
+os.makedirs("output", exist_ok=True)
 
 requirements = """
 A simple research assistant agent for exploring and summarizing academic papers.
@@ -37,11 +35,7 @@ def run():
     """
     Run the research crew.
     """
-    inputs = {
-        'requirements': requirements,
-        'module_name': module_name,
-        'class_name': class_name
-    }
+    inputs = {"requirements": requirements, "module_name": module_name, "class_name": class_name}
 
     # Create and run the crew
     result = EngineeringTeam().crew().kickoff(inputs=inputs)

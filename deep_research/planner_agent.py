@@ -1,10 +1,12 @@
-from pydantic import BaseModel, Field
 from agents import Agent
+from pydantic import BaseModel, Field
 
 HOW_MANY_SEARCHES = 5
 
-INSTRUCTIONS = f"You are a helpful research assistant. Given a query, come up with a set of web searches \
+INSTRUCTIONS = (
+    f"You are a helpful research assistant. Given a query, come up with a set of web searches \
 to perform to best answer the query. Output {HOW_MANY_SEARCHES} terms to query for."
+)
 
 
 class WebSearchItem(BaseModel):
@@ -13,8 +15,11 @@ class WebSearchItem(BaseModel):
 
 
 class WebSearchPlan(BaseModel):
-    searches: list[WebSearchItem] = Field(description="A list of web searches to perform to best answer the query.")
-    
+    searches: list[WebSearchItem] = Field(
+        description="A list of web searches to perform to best answer the query."
+    )
+
+
 planner_agent = Agent(
     name="PlannerAgent",
     instructions=INSTRUCTIONS,

@@ -1,7 +1,6 @@
 import os
 
 from agents import Agent
-
 from models import ProposedFix
 
 INSTRUCTIONS = """You are a senior engineer proposing fixes for a pull request issue.

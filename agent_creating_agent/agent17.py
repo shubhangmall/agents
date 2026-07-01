@@ -1,15 +1,16 @@
-from autogen_core import MessageContext, RoutedAgent, message_handler
+import random
+
+import messages
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import TextMessage
+from autogen_core import MessageContext, RoutedAgent, message_handler
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-import messages
-import random
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-class Agent(RoutedAgent):
 
+class Agent(RoutedAgent):
     system_message = """
     You are a dynamic travel innovator. Your task is to devise creative travel solutions using Agentic AI, or enhance current travel services.
     Your personal interests are in these sectors: Travel and Tourism, Technology.
@@ -25,10 +26,14 @@ class Agent(RoutedAgent):
     def __init__(self, name) -> None:
         super().__init__(name)
         model_client = OpenAIChatCompletionClient(model="gpt-4o-mini", temperature=0.9)
-        self._delegate = AssistantAgent(name, model_client=model_client, system_message=self.system_message)
+        self._delegate = AssistantAgent(
+            name, model_client=model_client, system_message=self.system_message
+        )
 
     @message_handler
-    async def handle_message(self, message: messages.Message, ctx: MessageContext) -> messages.Message:
+    async def handle_message(
+        self, message: messages.Message, ctx: MessageContext
+    ) -> messages.Message:
         print(f"{self.id.type}: Received message")
         text_message = TextMessage(content=message.content, source="user")
         response = await self._delegate.on_messages([text_message], ctx.cancellation_token)

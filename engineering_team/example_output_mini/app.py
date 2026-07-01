@@ -4,14 +4,17 @@ from accounts import Account
 # Create an instance of the Account class for demonstration
 account = Account("DemoUser", initial_deposit=1000.0)
 
+
 def create_account(username: str, initial_deposit: float):
     global account
     account = Account(username, initial_deposit)
     return f"Account created for {username} with an initial deposit of ${initial_deposit:.2f}"
 
+
 def deposit_funds(amount: float):
     account.deposit(amount)
     return f"Deposited: ${amount:.2f}. Current balance: ${account.balance:.2f}"
+
 
 def withdraw_funds(amount: float):
     try:
@@ -20,12 +23,14 @@ def withdraw_funds(amount: float):
     except ValueError as e:
         return str(e)
 
+
 def buy_shares(symbol: str, quantity: int):
     try:
         account.buy_shares(symbol, quantity)
         return f"Bought: {quantity} shares of {symbol}."
     except ValueError as e:
         return str(e)
+
 
 def sell_shares(symbol: str, quantity: int):
     try:
@@ -34,27 +39,34 @@ def sell_shares(symbol: str, quantity: int):
     except ValueError as e:
         return str(e)
 
+
 def view_portfolio():
     return f"Current Portfolio: {account.report_holdings()}"
+
 
 def view_profit_or_loss():
     return f"Profit/Loss: ${account.profit_or_loss():.2f}"
 
+
 def view_transactions():
     return "\n".join(account.report_transactions())
+
 
 def total_portfolio_value():
     return f"Total Portfolio Value: ${account.portfolio_value():.2f}"
 
+
 with gr.Blocks() as app:
     gr.Markdown("# Trading Simulation Account Management")
-    
+
     with gr.Group():
         username_input = gr.Textbox(label="Username")
         initial_deposit_input = gr.Number(label="Initial Deposit")
         create_button = gr.Button("Create Account")
         create_output = gr.Textbox(label="Output", interactive=False)
-        create_button.click(create_account, inputs=[username_input, initial_deposit_input], outputs=create_output)
+        create_button.click(
+            create_account, inputs=[username_input, initial_deposit_input], outputs=create_output
+        )
 
     with gr.Group():
         deposit_input = gr.Number(label="Deposit Amount")
@@ -73,14 +85,18 @@ with gr.Blocks() as app:
         buy_quantity_input = gr.Number(label="Quantity")
         buy_button = gr.Button("Buy Shares")
         buy_output = gr.Textbox(label="Output", interactive=False)
-        buy_button.click(buy_shares, inputs=[buy_symbol_input, buy_quantity_input], outputs=buy_output)
+        buy_button.click(
+            buy_shares, inputs=[buy_symbol_input, buy_quantity_input], outputs=buy_output
+        )
 
     with gr.Group():
         sell_symbol_input = gr.Textbox(label="Stock Symbol")
         sell_quantity_input = gr.Number(label="Quantity")
         sell_button = gr.Button("Sell Shares")
         sell_output = gr.Textbox(label="Output", interactive=False)
-        sell_button.click(sell_shares, inputs=[sell_symbol_input, sell_quantity_input], outputs=sell_output)
+        sell_button.click(
+            sell_shares, inputs=[sell_symbol_input, sell_quantity_input], outputs=sell_output
+        )
 
     with gr.Group():
         portfolio_button = gr.Button("View Portfolio")

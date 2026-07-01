@@ -4,6 +4,7 @@ from research_manager import ResearchManager
 
 load_dotenv(override=True)  # Load environment variables from .env file, overriding existing ones
 
+
 async def run(query: str):
     """Run the research process and stream progress/results back to the UI"""
     async for chunk in ResearchManager().run(query):  # Stream status updates and final report
@@ -14,44 +15,54 @@ async def run(query: str):
 with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     gr.Markdown("# Deep Research")  # App title
     gr.Markdown(
-        f"🔎 A team of **agents** will scour the web together for information and print your report below."
-    ) # Informational line for user
-    query_textbox = gr.Textbox(label="Please enter a topic for the agent team to research.")  # Input field for query
-    gr.Markdown(
-        f"This search may take up to a minute to complete. Thank you for your patience."
-    )
+        "🔎 A team of **agents** will scour the web together for information and print your report below."
+    )  # Informational line for user
+    query_textbox = gr.Textbox(
+        label="Please enter a topic for the agent team to research."
+    )  # Input field for query
+    gr.Markdown("This search may take up to a minute to complete. Thank you for your patience.")
     run_button = gr.Button("Run", variant="primary")  # Button to start research
     status_text = gr.Markdown("", visible=False)  # Status indicator with spinner
     report = gr.Markdown(label="Report")  # Output area for progress and final report
-    
+
     # Trigger research when button is clicked with button state management
-    run_event = run_button.click(
-        fn=lambda: (gr.Button("Processing...", variant="primary", interactive=False), gr.Markdown("🔄 **Researching...**", visible=True)),
-        outputs=[run_button, status_text],
-        queue=False
-    ).then(
-        fn=run, 
-        inputs=query_textbox, 
-        outputs=report,
-        show_progress="full"
-    ).then(
-        fn=lambda: (gr.Button("Run", variant="primary", interactive=True), gr.Markdown("", visible=False)),
-        outputs=[run_button, status_text]
+    run_event = (
+        run_button.click(
+            fn=lambda: (
+                gr.Button("Processing...", variant="primary", interactive=False),
+                gr.Markdown("🔄 **Researching...**", visible=True),
+            ),
+            outputs=[run_button, status_text],
+            queue=False,
+        )
+        .then(fn=run, inputs=query_textbox, outputs=report, show_progress="full")
+        .then(
+            fn=lambda: (
+                gr.Button("Run", variant="primary", interactive=True),
+                gr.Markdown("", visible=False),
+            ),
+            outputs=[run_button, status_text],
+        )
     )
-    
+
     # Also allow submitting with Enter key with button state management
-    submit_event = query_textbox.submit(
-        fn=lambda: (gr.Button("Processing...", variant="primary", interactive=False), gr.Markdown("🔄 **Researching...**", visible=True)),
-        outputs=[run_button, status_text],
-        queue=False
-    ).then(
-        fn=run, 
-        inputs=query_textbox, 
-        outputs=report,
-        show_progress="full"
-    ).then(
-        fn=lambda: (gr.Button("Run", variant="primary", interactive=True), gr.Markdown("", visible=False)),
-        outputs=[run_button, status_text]
+    submit_event = (
+        query_textbox.submit(
+            fn=lambda: (
+                gr.Button("Processing...", variant="primary", interactive=False),
+                gr.Markdown("🔄 **Researching...**", visible=True),
+            ),
+            outputs=[run_button, status_text],
+            queue=False,
+        )
+        .then(fn=run, inputs=query_textbox, outputs=report, show_progress="full")
+        .then(
+            fn=lambda: (
+                gr.Button("Run", variant="primary", interactive=True),
+                gr.Markdown("", visible=False),
+            ),
+            outputs=[run_button, status_text],
+        )
     )
 
 ui.queue()  # Enable queuing for proper event handling

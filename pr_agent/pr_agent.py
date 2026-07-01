@@ -1,7 +1,6 @@
 import gradio as gr
 from dotenv import load_dotenv
-
-from github_client import GitHubAuthError, PR_URL_PATTERN
+from github_client import PR_URL_PATTERN, GitHubAuthError
 from pr_manager import PRManager
 
 load_dotenv(override=True)
@@ -47,7 +46,11 @@ def post_comment():
     """Post the last generated report as a PR comment."""
     global comment_posted
     if comment_posted:
-        return manager.last_report_markdown or "", gr.update(interactive=False), "Comment already posted."
+        return (
+            manager.last_report_markdown or "",
+            gr.update(interactive=False),
+            "Comment already posted.",
+        )
 
     if not manager.last_report_markdown:
         return "", gr.update(interactive=False), "No report available. Run analysis first."

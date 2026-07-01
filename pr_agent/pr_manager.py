@@ -1,7 +1,6 @@
 import json
 
 from agents import Runner
-
 from fix_agent import fix_agent
 from github_client import GitHubClient
 from models import BabysitReport, Issue, PRContext, ProposedFix, TriageResult
@@ -73,9 +72,7 @@ class PRManager:
         fix.issue_id = issue.id
         return fix
 
-    async def report(
-        self, triage: TriageResult, fixes: list[ProposedFix]
-    ) -> BabysitReport:
+    async def report(self, triage: TriageResult, fixes: list[ProposedFix]) -> BabysitReport:
         input_text = (
             f"Triage result:\n{triage.model_dump_json(indent=2)}\n\n"
             f"Proposed fixes:\n{json.dumps([f.model_dump() for f in fixes], indent=2)}"
@@ -96,9 +93,7 @@ class PRManager:
 
         snippets: list[str] = []
         for path in paths[:3]:
-            content = await self.github.fetch_file_content(
-                context.url, path, context.head_ref
-            )
+            content = await self.github.fetch_file_content(context.url, path, context.head_ref)
             if content:
                 trimmed = content[:8000]
                 if len(content) > 8000:

@@ -43,17 +43,19 @@ class PRContext(BaseModel):
 
     def to_prompt(self) -> str:
         """Serialize PR context for agent consumption."""
-        files_text = "\n".join(
-            f"  - {f.path} (+{f.additions}/-{f.deletions})" for f in self.files
+        files_text = "\n".join(f"  - {f.path} (+{f.additions}/-{f.deletions})" for f in self.files)
+        checks_text = (
+            "\n".join(f"  - [{c.state}] {c.name}: {c.description}" for c in self.checks)
+            or "  (no checks reported)"
         )
-        checks_text = "\n".join(
-            f"  - [{c.state}] {c.name}: {c.description}" for c in self.checks
-        ) or "  (no checks reported)"
-        comments_text = "\n".join(
-            f"  - @{c.author} on {c.path or 'general'}"
-            f"{f' line {c.line}' if c.line else ''}: {c.body[:500]}"
-            for c in self.comments
-        ) or "  (no unresolved review comments)"
+        comments_text = (
+            "\n".join(
+                f"  - @{c.author} on {c.path or 'general'}"
+                f"{f' line {c.line}' if c.line else ''}: {c.body[:500]}"
+                for c in self.comments
+            )
+            or "  (no unresolved review comments)"
+        )
 
         return (
             f"PR URL: {self.url}\n"

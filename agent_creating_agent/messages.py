@@ -1,10 +1,10 @@
-from dataclasses import dataclass
-from autogen_core import AgentId
 import glob
 import os
-
-
 import random
+from dataclasses import dataclass
+
+from autogen_core import AgentId
+
 
 @dataclass
 class Message:

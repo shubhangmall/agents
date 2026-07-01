@@ -68,9 +68,7 @@ class GitHubClient:
             truncation_note=truncation_note,
         )
 
-    async def fetch_file_content(
-        self, pr_url: str, file_path: str, ref: str
-    ) -> str | None:
+    async def fetch_file_content(self, pr_url: str, file_path: str, ref: str) -> str | None:
         import base64
         from urllib.parse import quote
 
@@ -204,9 +202,7 @@ class GitHubClient:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise subprocess.CalledProcessError(
-                proc.returncode, ["gh", *args], stdout, stderr
-            )
+            raise subprocess.CalledProcessError(proc.returncode, ["gh", *args], stdout, stderr)
         return stdout.decode("utf-8", errors="replace")
 
     def _parse_pr_url(self, pr_url: str) -> tuple[str, str, int]:

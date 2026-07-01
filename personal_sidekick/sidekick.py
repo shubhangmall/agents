@@ -1,26 +1,26 @@
-from typing import Annotated
-from typing_extensions import TypedDict
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
+import asyncio
+import uuid
+from datetime import datetime
+from typing import Annotated, Any
+
 from dotenv import load_dotenv
-from langgraph.prebuilt import ToolNode
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from typing import List, Any, Optional, Dict
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
-from sidekick_tools import playwright_tools, other_tools
-import uuid
-import asyncio
-from datetime import datetime
+from sidekick_tools import other_tools, playwright_tools
+from typing_extensions import TypedDict
 
 load_dotenv(override=True)
 
 
 class State(TypedDict):
-    messages: Annotated[List[Any], add_messages]
+    messages: Annotated[list[Any], add_messages]
     success_criteria: str
-    feedback_on_work: Optional[str]
+    feedback_on_work: str | None
     success_criteria_met: bool
     user_input_needed: bool
 
@@ -54,7 +54,7 @@ class Sidekick:
         self.evaluator_llm_with_output = evaluator_llm.with_structured_output(EvaluatorOutput)
         await self.build_graph()
 
-    def worker(self, state: State) -> Dict[str, Any]:
+    def worker(self, state: State) -> dict[str, Any]:
         system_message = f"""You are a helpful assistant that can use tools to complete tasks.
     You keep working on a task until either you have a question or clarification for the user, or the success criteria is met.
     You have many tools to help you, including tools to browse the internet, navigating and retrieving web pages.
@@ -106,7 +106,7 @@ class Sidekick:
         else:
             return "evaluator"
 
-    def format_conversation(self, messages: List[Any]) -> str:
+    def format_conversation(self, messages: list[Any]) -> str:
         conversation = "Conversation history:\n\n"
         for message in messages:
             if isinstance(message, HumanMessage):

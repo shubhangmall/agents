@@ -1,21 +1,23 @@
-from dotenv import load_dotenv
-from openai import OpenAI
 import hashlib
 import json
 import os
 import re
-import requests
-from pypdf import PdfReader
-import gradio as gr
-import chromadb
-from chromadb.utils import embedding_functions
 
+import chromadb
+import gradio as gr
+import requests
+from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
+from openai import OpenAI
+from pypdf import PdfReader
 
 load_dotenv(override=True)
 
 # RAG config
 CHROMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".chroma")
-INDEX_META_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".chroma_index_meta.json")
+INDEX_META_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".chroma_index_meta.json"
+)
 COLLECTION_NAME = "career_context"
 EMBEDDING_MODEL = "text-embedding-3-small"
 TOP_K = 3
@@ -27,18 +29,22 @@ RAG_DEBUG = os.getenv("RAG_DEBUG", "").strip().lower() in ("1", "true", "yes", "
 
 # Resume section headers commonly found in extracted text
 RESUME_SECTION_HEADERS = re.compile(
-    r"^(?:" + "|".join([
-        r"EXPERIENCE",
-        r"TECHNICAL\s+SKILLS",
-        r"SKILLS",
-        r"EDUCATION",
-        r"PROJECTS",
-        r"CERTIFICATIONS",
-        r"LANGUAGES",
-        r"INTERESTS",
-        r"SUMMARY",
-    ]) + r")\s*$",
-    re.IGNORECASE | re.MULTILINE
+    r"^(?:"
+    + "|".join(
+        [
+            r"EXPERIENCE",
+            r"TECHNICAL\s+SKILLS",
+            r"SKILLS",
+            r"EDUCATION",
+            r"PROJECTS",
+            r"CERTIFICATIONS",
+            r"LANGUAGES",
+            r"INTERESTS",
+            r"SUMMARY",
+        ]
+    )
+    + r")\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -108,7 +114,18 @@ def chunk_resume(resume_text):
                 company = lines[0].split("|", 1)[0].strip() if lines else ""
                 role = lines[1].strip() if len(lines) > 1 and not lines[1].startswith("•") else ""
                 cid = f"exp_{i}_{_slug(company) or 'unknown'}"
-                chunks.append((cid, rc, {"source": "resume", "section": "Experience", "company": company, "role": role}))
+                chunks.append(
+                    (
+                        cid,
+                        rc,
+                        {
+                            "source": "resume",
+                            "section": "Experience",
+                            "company": company,
+                            "role": role,
+                        },
+                    )
+                )
         elif normalized in ("TECHNICAL SKILLS", "SKILLS"):
             cid = f"skills_{_slug(normalized)}"
             chunks.append((cid, section_text, {"source": "resume", "section": "Skills"}))
@@ -123,6 +140,7 @@ def chunk_resume(resume_text):
 
 def compute_index_fingerprint(resume_pdf_path: str, summary_txt_path: str):
     """Fingerprint used to decide whether to rebuild the vector index."""
+
     def stat_sig(p: str):
         st = os.stat(p)
         return {"path": os.path.basename(p), "mtime": int(st.st_mtime), "size": int(st.st_size)}
@@ -144,7 +162,7 @@ def push(text):
             "token": os.getenv("PUSHOVER_TOKEN"),
             "user": os.getenv("PUSHOVER_USER"),
             "message": text,
-        }
+        },
     )
 
 
@@ -152,9 +170,11 @@ def record_user_details(email, name="Name not provided", notes="not provided"):
     push(f"Recording {name} with email {email} and notes {notes}")
     return {"recorded": "ok"}
 
+
 def record_unknown_question(question):
     push(f"Recording {question}")
     return {"recorded": "ok"}
+
 
 record_user_details_json = {
     "name": "record_user_details",
@@ -162,23 +182,16 @@ record_user_details_json = {
     "parameters": {
         "type": "object",
         "properties": {
-            "email": {
-                "type": "string",
-                "description": "The email address of this user"
-            },
-            "name": {
-                "type": "string",
-                "description": "The user's name, if they provided it"
-            }
-            ,
+            "email": {"type": "string", "description": "The email address of this user"},
+            "name": {"type": "string", "description": "The user's name, if they provided it"},
             "notes": {
                 "type": "string",
-                "description": "Any additional information about the conversation that's worth recording to give context"
-            }
+                "description": "Any additional information about the conversation that's worth recording to give context",
+            },
         },
         "required": ["email"],
-        "additionalProperties": False
-    }
+        "additionalProperties": False,
+    },
 }
 
 record_unknown_question_json = {
@@ -187,27 +200,29 @@ record_unknown_question_json = {
     "parameters": {
         "type": "object",
         "properties": {
-            "question": {
-                "type": "string",
-                "description": "The question that couldn't be answered"
-            },
+            "question": {"type": "string", "description": "The question that couldn't be answered"},
         },
         "required": ["question"],
-        "additionalProperties": False
-    }
+        "additionalProperties": False,
+    },
 }
 
-tools = [{"type": "function", "function": record_user_details_json},
-        {"type": "function", "function": record_unknown_question_json}]
+tools = [
+    {"type": "function", "function": record_user_details_json},
+    {"type": "function", "function": record_unknown_question_json},
+]
 
 
 class Me:
-
     def __init__(self):
         self.openai = OpenAI()
         self.name = "Shubhang Mall"
-        self._resume_pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "me", "resume.pdf")
-        self._summary_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "me", "summary.txt")
+        self._resume_pdf_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "me", "resume.pdf"
+        )
+        self._summary_txt_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "me", "summary.txt"
+        )
 
         reader = PdfReader(self._resume_pdf_path)
         self.resume_text = ""
@@ -215,30 +230,31 @@ class Me:
             text = page.extract_text()
             if text:
                 self.resume_text += text
-        with open(self._summary_txt_path, "r", encoding="utf-8") as f:
+        with open(self._summary_txt_path, encoding="utf-8") as f:
             self.summary = f.read()
 
         # RAG: persistent Chroma + OpenAI embeddings; build index if empty
         os.makedirs(CHROMA_PATH, exist_ok=True)
         self._chroma = chromadb.PersistentClient(path=CHROMA_PATH)
         self._ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            model_name=EMBEDDING_MODEL
+            api_key=os.getenv("OPENAI_API_KEY"), model_name=EMBEDDING_MODEL
         )
         self._collection = self._chroma.get_or_create_collection(
             name=COLLECTION_NAME,
             embedding_function=self._ef,
-            metadata={"description": "Career context for RAG"}
+            metadata={"description": "Career context for RAG"},
         )
         self._ensure_fresh_index()
 
     def _ensure_fresh_index(self):
         """Auto-rebuild the index when resume/summary or chunking logic changes."""
-        fingerprint, payload = compute_index_fingerprint(self._resume_pdf_path, self._summary_txt_path)
+        fingerprint, payload = compute_index_fingerprint(
+            self._resume_pdf_path, self._summary_txt_path
+        )
         existing = None
         try:
             if os.path.exists(INDEX_META_PATH):
-                with open(INDEX_META_PATH, "r", encoding="utf-8") as f:
+                with open(INDEX_META_PATH, encoding="utf-8") as f:
                     existing = json.load(f)
         except Exception:
             existing = None
@@ -254,12 +270,14 @@ class Me:
         self._collection = self._chroma.get_or_create_collection(
             name=COLLECTION_NAME,
             embedding_function=self._ef,
-            metadata={"description": "Career context for RAG"}
+            metadata={"description": "Career context for RAG"},
         )
         self._build_index()
         try:
             with open(INDEX_META_PATH, "w", encoding="utf-8") as f:
-                json.dump({"fingerprint": fingerprint, "details": payload}, f, indent=2, sort_keys=True)
+                json.dump(
+                    {"fingerprint": fingerprint, "details": payload}, f, indent=2, sort_keys=True
+                )
         except Exception:
             pass
 
@@ -285,7 +303,7 @@ class Me:
             results = self._collection.query(
                 query_texts=[query],
                 n_results=min(TOP_K + 5, self._collection.count()),  # get enough to filter
-                include=["documents", "metadatas", "distances"]
+                include=["documents", "metadatas", "distances"],
             )
             docs = results["documents"][0] if results["documents"] else []
             metas = results["metadatas"][0] if results["metadatas"] else []
@@ -295,7 +313,9 @@ class Me:
 
             q = (query or "").lower()
             wants_education = any(k in q for k in ("education", "school", "university", "degree"))
-            wants_skills = any(k in q for k in ("skill", "stack", "technology", "tools", "framework", "language"))
+            wants_skills = any(
+                k in q for k in ("skill", "stack", "technology", "tools", "framework", "language")
+            )
 
             # Build unique chunks: always include summary, then pick up to TOP_K relevant chunks with light diversity
             summary_text = None
@@ -334,7 +354,13 @@ class Me:
                 sec = (meta.get("section") or "").lower()
                 is_experience = "experience" in sec
                 # diversity: prefer at most one Experience chunk unless the query is company-specific
-                if is_experience and experience_taken >= 1 and not any((meta.get("company") or "").lower() in q for _, _, meta in candidates_sorted):
+                if (
+                    is_experience
+                    and experience_taken >= 1
+                    and not any(
+                        (meta.get("company") or "").lower() in q for _, _, meta in candidates_sorted
+                    )
+                ):
                     continue
                 selected.append((cid, doc, meta))
                 seen_text.add(doc)
@@ -349,7 +375,15 @@ class Me:
             if selected:
                 parts.append("## Resume (excerpts):\n" + "\n\n".join([d for _, d, _ in selected]))
             if RAG_DEBUG:
-                dbg = [{"id": cid, "section": meta.get("section"), "company": meta.get("company"), "role": meta.get("role")} for cid, _, meta in selected]
+                dbg = [
+                    {
+                        "id": cid,
+                        "section": meta.get("section"),
+                        "company": meta.get("company"),
+                        "role": meta.get("role"),
+                    }
+                    for cid, _, meta in selected
+                ]
                 print("[RAG_DEBUG] selected_chunks:", json.dumps(dbg, ensure_ascii=False))
             return "\n\n".join(parts) if parts else self._fallback_context()
         except Exception:
@@ -367,9 +401,11 @@ class Me:
             print(f"Tool called: {tool_name}", flush=True)
             tool = globals().get(tool_name)
             result = tool(**arguments) if tool else {}
-            results.append({"role": "tool","content": json.dumps(result),"tool_call_id": tool_call.id})
+            results.append(
+                {"role": "tool", "content": json.dumps(result), "tool_call_id": tool_call.id}
+            )
         return results
-    
+
     def system_prompt(self, context):
         system_prompt = f"You are acting as {self.name}. You are answering questions on {self.name}'s website, \
 particularly questions related to {self.name}'s career, background, skills and experience. \
@@ -389,11 +425,17 @@ If the user is engaging in discussion, try to steer them towards getting in touc
             print("\nQUESTION:", message)
             print("CONTEXT LENGTH:", len(context))
             print(context[:300].replace("\n", " "))
-        messages = [{"role": "system", "content": self.system_prompt(context)}] + history + [{"role": "user", "content": message}]
+        messages = (
+            [{"role": "system", "content": self.system_prompt(context)}]
+            + history
+            + [{"role": "user", "content": message}]
+        )
         done = False
         while not done:
-            response = self.openai.chat.completions.create(model="gpt-4o-mini", messages=messages, tools=tools)
-            if response.choices[0].finish_reason=="tool_calls":
+            response = self.openai.chat.completions.create(
+                model="gpt-4o-mini", messages=messages, tools=tools
+            )
+            if response.choices[0].finish_reason == "tool_calls":
                 message = response.choices[0].message
                 tool_calls = message.tool_calls
                 results = self.handle_tool_call(tool_calls)
@@ -402,9 +444,8 @@ If the user is engaging in discussion, try to steer them towards getting in touc
             else:
                 done = True
         return response.choices[0].message.content
-    
+
 
 if __name__ == "__main__":
     me = Me()
     gr.ChatInterface(me.chat, type="messages").launch()
-    

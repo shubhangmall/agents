@@ -1,7 +1,6 @@
 import os
 
 from agents import Agent
-
 from models import TriageResult
 
 INSTRUCTIONS = """You are a PR triage specialist. Given a pull request context, identify all issues

@@ -1,14 +1,14 @@
 import os
-from typing import Dict
 
 import sendgrid
-from sendgrid.helpers.mail import Email, Mail, Content, To
 from agents import Agent, function_tool
+from sendgrid.helpers.mail import Content, Email, Mail, To
+
 
 @function_tool
-def send_email(subject: str, html_body: str) -> Dict[str, str]:
-    """ Send an email with the given subject and HTML body """
-    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
+def send_email(subject: str, html_body: str) -> dict[str, str]:
+    """Send an email with the given subject and HTML body"""
+    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get("SENDGRID_API_KEY"))
     from_email = Email("shubhangm96@gmail.com")
     to_email = To("shubhangm96@gmail.com")
     content = Content("text/html", html_body)
@@ -16,6 +16,7 @@ def send_email(subject: str, html_body: str) -> Dict[str, str]:
     response = sg.client.mail.send.post(request_body=mail)
     print("Email response", response.status_code)
     return {"status": "success"}
+
 
 INSTRUCTIONS = """You are able to send a nicely formatted HTML email based on a detailed report.
 You will be provided with a detailed report. You should use your tool to send one email, providing the 
