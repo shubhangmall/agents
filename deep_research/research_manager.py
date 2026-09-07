@@ -1,82 +1,55 @@
-from agents import Runner, trace, gen_trace_id
-from search_agent import search_agent
-from planner_agent import planner_agent, WebSearchItem, WebSearchPlan
-from writer_agent import writer_agent, ReportData
-from email_agent import email_agent
 import asyncio
+import os
+
+from email_agent import send_email
+from planner_agent import WebSearchPlan, plan_searches
+from search_agent import SearchResult, search_web
+from writer_agent import stream_report
+
 
 class ResearchManager:
-
     async def run(self, query: str):
-        """ Run the deep research process, yielding the status updates and the final report"""
-        trace_id = gen_trace_id()
-        with trace("Research trace", trace_id=trace_id):
-            print("Starting research...")
-            search_plan = await self.plan_searches(query)
-            yield "Searches planned, starting to search..."     
-            search_results = await self.perform_searches(search_plan)
-            yield "Searches complete, writing report..."
-            report = await self.write_report(query, search_results)
-            yield "Report written, putting on the finishing touches..."
-            await self.send_email(report)
-            yield "Research complete!"
-            yield report.markdown_report
-        
+        """Run the research pipeline and yield progress/report text to Gradio."""
+        print("Starting research...")
+        search_plan = await self.plan_searches(query)
+        yield "Searches planned, starting to search..."
+
+        search_results = await self.perform_searches(search_plan)
+        yield "Searches complete, writing report..."
+
+        report_text = ""
+        async for chunk in self.write_report(query, search_results):
+            report_text += chunk
+            yield report_text
+
+        if os.getenv("SEND_RESEARCH_EMAIL", "").lower() in {"1", "true", "yes"}:
+            send_email("Deep Research report", report_text)
+
+        yield "Research complete!\n\n" + report_text
 
     async def plan_searches(self, query: str) -> WebSearchPlan:
-        """ Plan the searches to perform for the query """
         print("Planning searches...")
-        result = await Runner.run(
-            planner_agent,
-            f"Query: {query}",
-        )
-        print(f"Will perform {len(result.final_output.searches)} searches")
-        return result.final_output_as(WebSearchPlan)
+        plan = await plan_searches(query)
+        print(f"Will perform {len(plan.searches)} searches")
+        return plan
 
-    async def perform_searches(self, search_plan: WebSearchPlan) -> list[str]:
-        """ Perform the searches to perform for the query """
+    async def perform_searches(self, search_plan: WebSearchPlan) -> list[SearchResult]:
         print("Searching...")
-        num_completed = 0
-        tasks = [asyncio.create_task(self.search(item)) for item in search_plan.searches]
-        results = []
+        tasks = [asyncio.create_task(search_web(item)) for item in search_plan.searches]
+        results: list[SearchResult] = []
+        completed = 0
         for task in asyncio.as_completed(tasks):
-            result = await task
-            if result is not None:
-                results.append(result)
-            num_completed += 1
-            print(f"Searching... {num_completed}/{len(tasks)} completed")
+            try:
+                results.append(await task)
+            except Exception as error:
+                print(f"Search failed: {error}")
+            completed += 1
+            print(f"Searching... {completed}/{len(tasks)} completed")
         print("Finished searching")
         return results
 
-    async def search(self, item: WebSearchItem) -> str | None:
-        """ Perform a search for the query """
-        input = f"Search term: {item.query}\nReason for searching: {item.reason}"
-        try:
-            result = await Runner.run(
-                search_agent,
-                input,
-            )
-            return str(result.final_output)
-        except Exception:
-            return None
-
-    async def write_report(self, query: str, search_results: list[str]) -> ReportData:
-        """ Write the report for the query """
-        print("Thinking about report...")
-        input = f"Original query: {query}\nSummarized search results: {search_results}"
-        result = await Runner.run(
-            writer_agent,
-            input,
-        )
-
+    async def write_report(self, query: str, search_results: list[SearchResult]):
+        print("Writing report...")
+        async for chunk in stream_report(query, search_results):
+            yield chunk
         print("Finished writing report")
-        return result.final_output_as(ReportData)
-    
-    async def send_email(self, report: ReportData) -> None:
-        print("Writing email...")
-        result = await Runner.run(
-            email_agent,
-            report.markdown_report,
-        )
-        print("Email sent")
-        return report

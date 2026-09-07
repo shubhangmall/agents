@@ -1,29 +1,23 @@
 import os
-from typing import Dict
+from html import escape
 
 import sendgrid
-from sendgrid.helpers.mail import Email, Mail, Content, To
-from agents import Agent, function_tool
+from sendgrid.helpers.mail import Content, Email, Mail, To
 
-@function_tool
-def send_email(subject: str, html_body: str) -> Dict[str, str]:
-    """ Send an email with the given subject and HTML body """
-    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
-    from_email = Email("shubhangm96@gmail.com")
-    to_email = To("shubhangm96@gmail.com")
-    content = Content("text/html", html_body)
-    mail = Mail(from_email, to_email, subject, content).get()
+
+def send_email(subject: str, markdown_report: str) -> dict[str, str]:
+    """Send a report only when the caller explicitly enables this optional action."""
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    if not api_key:
+        raise RuntimeError("SENDGRID_API_KEY is not configured")
+
+    sg = sendgrid.SendGridAPIClient(api_key=api_key)
+    mail = Mail(
+        Email("shubhangm96@gmail.com"),
+        To("shubhangm96@gmail.com"),
+        subject,
+        Content("text/html", f"<pre>{escape(markdown_report)}</pre>"),
+    ).get()
     response = sg.client.mail.send.post(request_body=mail)
     print("Email response", response.status_code)
     return {"status": "success"}
-
-INSTRUCTIONS = """You are able to send a nicely formatted HTML email based on a detailed report.
-You will be provided with a detailed report. You should use your tool to send one email, providing the 
-report converted into clean, well presented HTML with an appropriate subject line."""
-
-email_agent = Agent(
-    name="Email agent",
-    instructions=INSTRUCTIONS,
-    tools=[send_email],
-    model="gpt-4o-mini",
-)
