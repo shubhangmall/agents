@@ -74,6 +74,25 @@ class LLMClient:
         if response.status_code >= 400:
             raise ProviderUnavailableError("LLM provider request failed")
 
+    def _structured_response_format(self, schema: Any) -> dict[str, Any]:
+        if self.settings.llm_provider != "openrouter" or schema is None:
+            return {"type": "json_object"}
+
+        try:
+            json_schema = schema.model_json_schema()
+        except (AttributeError, TypeError, ValueError) as error:
+            raise StructuredOutputError("Structured output schema is invalid") from error
+        json_schema.setdefault("additionalProperties", False)
+        name = getattr(schema, "__name__", "structured_output").lower()
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name,
+                "strict": True,
+                "schema": json_schema,
+            },
+        }
+
     async def generate_text(self, prompt: str) -> str:
         response = await self._request(
             {"model": self._model(), "messages": [{"role": "user", "content": prompt}]}
@@ -99,7 +118,7 @@ class LLMClient:
             {
                 "model": self._model(),
                 "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"},
+                "response_format": self._structured_response_format(schema),
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }

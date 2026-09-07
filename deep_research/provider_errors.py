@@ -33,3 +33,8 @@ class SearchProviderError(ProviderError):
 
 class WriterStreamError(ProviderError):
     category = "interrupted writer stream"
+
+
+def public_error_message(error: ProviderError) -> str:
+    """Return a user-facing message without provider details or payloads."""
+    return f"⚠️ **Deep Research could not complete this request ({error.category}).**"

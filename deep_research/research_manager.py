@@ -4,6 +4,7 @@ import os
 
 from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
+from provider_errors import ProviderError
 from search_agent import SearchResult, search_web
 from writer_agent import stream_report
 
@@ -45,8 +46,10 @@ class ResearchManager:
         for task in asyncio.as_completed(tasks):
             try:
                 results.append(await task)
-            except Exception as error:
-                print(f"Search failed: {error}")
+            except ProviderError as error:
+                print(f"Search failed: {error.category}")
+            except Exception:
+                print("Search failed: unexpected provider failure")
             completed += 1
             print(f"Searching... {completed}/{len(tasks)} completed")
         print("Finished searching")

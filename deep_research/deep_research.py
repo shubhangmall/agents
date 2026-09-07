@@ -1,7 +1,7 @@
 import gradio as gr
 import logging
 from research_manager import ResearchManager
-from provider_errors import ProviderError
+from provider_errors import ProviderError, public_error_message
 
 
 
@@ -11,10 +11,10 @@ async def run(query: str):
         async for chunk in ResearchManager().run(query):  # Stream status updates and final report
             yield chunk
     except ProviderError as error:
-        logging.exception("Deep Research request failed")
-        yield f"⚠️ **Deep Research could not complete this request ({error.category}).**"
+        logging.error("Deep Research request failed: %s", error.category)
+        yield public_error_message(error)
     except Exception:
-        logging.exception("Deep Research request failed")
+        logging.error("Deep Research request failed: unexpected internal error")
         yield "⚠️ **Deep Research could not complete this request. Please try again later.**"
 
 

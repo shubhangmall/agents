@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +12,12 @@ import research_manager
 import search_agent
 import search_client
 import writer_agent
-from provider_errors import ProviderConfigurationError, WriterStreamError
+from provider_errors import (
+    ProviderConfigurationError,
+    ProviderUnavailableError,
+    WriterStreamError,
+    public_error_message,
+)
 from search_client import SearchHit
 
 
@@ -66,10 +72,38 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Authorization", str(raised.exception))
 
     def test_environment_values_override_defaults_without_exposing_secrets(self):
-        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "LLM_MODEL": "local-test", "SEARCH_MAX_RESULTS": "3"}):
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_PROVIDER": "ollama",
+                "LLM_MODEL": "deployment-model",
+                "SEARCH_MAX_RESULTS": "3",
+            },
+        ):
             settings = config.Settings.from_env()
-        self.assertEqual(settings.llm_model, "local-test")
+        self.assertEqual(settings.llm_model, "deployment-model")
         self.assertEqual(settings.search_max_results, 3)
+
+    def test_dotenv_never_overrides_deployment_environment(self):
+        source = Path(config.__file__).read_text()
+        self.assertIn("override=False", source)
+        self.assertNotIn("override=True", source)
+
+    def test_google_genai_runtime_reference_is_absent(self):
+        root = Path(__file__).parent
+        google_genai = ".".join(("google", "genai"))
+        requirements = (root / "requirements.txt").read_text()
+        self.assertNotIn("google-genai", requirements)
+        for path in root.glob("*.py"):
+            self.assertNotIn(google_genai, path.read_text())
+
+    def test_user_facing_provider_error_is_sanitized(self):
+        message = public_error_message(
+            ProviderUnavailableError("raw body secret https://user:password@example.com")
+        )
+        self.assertIn("provider unavailable", message)
+        self.assertNotIn("raw body", message)
+        self.assertNotIn("password", message)
 
     async def test_tavily_request_is_basic_and_normalizes_mocked_response(self):
         class FakeResponse:
@@ -137,6 +171,44 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
             output = [chunk async for chunk in manager.run("query")]
         self.assertTrue(output[-1].endswith("complete report"))
 
+    async def test_search_failure_logging_is_sanitized(self):
+        async def fake_search(item):
+            raise ProviderUnavailableError("secret body https://user:password@example.com")
+
+        plan = SimpleNamespace(searches=[SimpleNamespace(query="query")])
+        with patch.object(research_manager, "search_web", fake_search), patch.object(
+            research_manager, "print"
+        ) as printed:
+            await research_manager.ResearchManager().perform_searches(plan)
+        logged = " ".join(str(call) for call in printed.call_args_list)
+        self.assertIn("provider unavailable", logged)
+        self.assertNotIn("password", logged)
+        self.assertNotIn("secret body", logged)
+
+    async def test_provider_failure_is_not_retried(self):
+        attempts = 0
+
+        class FailingClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, *args, **kwargs):
+                nonlocal attempts
+                attempts += 1
+                raise llm_client.httpx.ConnectError("secret body")
+
+        settings = config.Settings.from_env()
+        settings = config.Settings(
+            **{**settings.__dict__, "llm_provider": "ollama", "ollama_model": "local-test"}
+        )
+        with patch.object(llm_client.httpx, "AsyncClient", return_value=FailingClient()):
+            with self.assertRaises(ProviderUnavailableError):
+                await llm_client.LLMClient(settings).generate_text("query")
+        self.assertEqual(attempts, 1)
+
 
 class WriterTests(unittest.IsolatedAsyncioTestCase):
     async def test_writer_streams_chunks_and_preserves_citation_contract(self):
@@ -167,6 +239,104 @@ class WriterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await anext(stream), "partial")
             with self.assertRaises(WriterStreamError):
                 await anext(stream)
+
+
+class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
+    async def test_openrouter_sends_json_schema_and_locally_validates(self):
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"searches":[{"reason":"scope","query":"query"}]}'
+                            }
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            def __init__(self):
+                self.kwargs = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, url, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        settings = config.Settings(
+            llm_provider="openrouter",
+            llm_model="openrouter/free",
+            openrouter_api_key="test-key",
+            groq_api_key=None,
+            ollama_base_url="http://127.0.0.1:11434",
+            ollama_model="llama3.2",
+            search_provider="tavily",
+            tavily_api_key="test-key",
+            search_max_results=5,
+        )
+        fake_client = FakeClient()
+        with patch.object(llm_client.httpx, "AsyncClient", return_value=fake_client):
+            response = await llm_client.LLMClient(settings).generate_structured(
+                "query", schema=planner_agent.WebSearchPlan
+            )
+        response_format = fake_client.kwargs["json"]["response_format"]
+        self.assertEqual(response_format["type"], "json_schema")
+        self.assertTrue(response_format["json_schema"]["strict"])
+        self.assertIn("properties", response_format["json_schema"]["schema"])
+        self.assertIsInstance(response.parsed, planner_agent.WebSearchPlan)
+
+    async def test_non_openrouter_providers_keep_json_object_mode(self):
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {"choices": [{"message": {"content": '{"searches": []}'}}]}
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def post(self, url, **kwargs):
+                self.kwargs = kwargs
+                return FakeResponse()
+
+        settings = config.Settings(
+            llm_provider="ollama",
+            llm_model="local-test",
+            openrouter_api_key=None,
+            groq_api_key=None,
+            ollama_base_url="http://127.0.0.1:11434",
+            ollama_model="local-test",
+            search_provider="tavily",
+            tavily_api_key="test-key",
+            search_max_results=5,
+        )
+        fake_client = FakeClient()
+        with patch.object(llm_client.httpx, "AsyncClient", return_value=fake_client):
+            await llm_client.LLMClient(settings).generate_structured(
+                "query", schema=planner_agent.WebSearchPlan
+            )
+        self.assertEqual(fake_client.kwargs["json"]["response_format"], {"type": "json_object"})
+
+    async def test_openrouter_default_is_free_without_paid_fallback(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = config.Settings.from_env()
+        self.assertEqual(settings.llm_provider, "openrouter")
+        self.assertEqual(settings.llm_model, "openrouter/free")
+        client = llm_client.LLMClient.__new__(llm_client.LLMClient)
+        client.settings = settings
+        self.assertEqual(client._model(), "openrouter/free")
 
 
 if __name__ == "__main__":
