@@ -1,23 +1,41 @@
+import json
+
+from google.genai import types
 from pydantic import BaseModel, Field
-from agents import Agent
+
+from gemini_client import generate_content
 
 HOW_MANY_SEARCHES = 5
 
-INSTRUCTIONS = f"You are a helpful research assistant. Given a query, come up with a set of web searches \
-to perform to best answer the query. Output {HOW_MANY_SEARCHES} terms to query for."
-
 
 class WebSearchItem(BaseModel):
-    reason: str = Field(description="Your reasoning for why this search is important to the query.")
-    query: str = Field(description="The search term to use for the web search.")
+    reason: str = Field(description="Why this search is important to the query.")
+    query: str = Field(description="The web search query to run.")
 
 
 class WebSearchPlan(BaseModel):
-    searches: list[WebSearchItem] = Field(description="A list of web searches to perform to best answer the query.")
-    
-planner_agent = Agent(
-    name="PlannerAgent",
-    instructions=INSTRUCTIONS,
-    model="gpt-4o-mini",
-    output_type=WebSearchPlan,
-)
+    searches: list[WebSearchItem] = Field(
+        description="A bounded list of web searches needed to answer the query."
+    )
+
+
+async def plan_searches(query: str) -> WebSearchPlan:
+    prompt = (
+        f"Create no more than {HOW_MANY_SEARCHES} distinct web searches for this research query. "
+        "Return only the requested JSON structure. Avoid redundant searches.\n\n"
+        f"Research query: {query}"
+    )
+    response = await generate_content(
+        prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=WebSearchPlan,
+            temperature=0.2,
+            max_output_tokens=800,
+        ),
+    )
+    if isinstance(response.parsed, WebSearchPlan):
+        plan = response.parsed
+    else:
+        plan = WebSearchPlan.model_validate(json.loads(response.text))
+    return WebSearchPlan(searches=plan.searches[:HOW_MANY_SEARCHES])

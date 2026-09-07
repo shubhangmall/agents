@@ -7,17 +7,17 @@ sdk_version: 5.44.1
 
 # Deep Research Agent
 
-A polished, full‑stack demonstration of an autonomous research assistant built and maintained by **Shubhang Mall**. This system uses a team of specialized agents to take a user query, plan a research strategy, scour the web, synthesize findings, and optionally email the final report.
+A polished, full‑stack demonstration of an autonomous research assistant built and maintained by **Shubhang Mall**. This system uses Gemini to plan searches, ground concurrent web research, synthesize findings, and optionally email the final report.
 
 ## How It Works
 
-- **Planner Agent** builds a high‑level task list based on the query.
-- **Search Agent** performs web searches and returns raw snippets.
-- **Writer Agent** crafts narrative summaries and assembles the final report.
-- **Email Agent** (optional) can send the completed document to a specified address.
+- **Planner** builds a bounded search plan with Gemini 2.5 Flash.
+- **Search** runs concurrent Gemini Google Search-grounded queries and preserves source metadata.
+- **Writer** synthesizes the normalized evidence and streams a Markdown report with source IDs.
+- **Email** (optional) can send the completed document to a specified address.
 - `ResearchManager` coordinates the above and streams status updates to the UI.
 
-The architecture showcases asynchronous workflows, streaming OpenAI responses, and clean separation of concerns between agents.
+The architecture showcases asynchronous workflows, native Gemini grounding, streamed report output, and clean separation of concerns between pipeline stages.
 
 ## Installation
 
@@ -26,7 +26,7 @@ cd deep_research
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export OPENAI_API_KEY="your_key_here"
+export GEMINI_API_KEY="your_key_here"
 ```
 
 > You can also manage dependencies with `uv`/`crewai` if you prefer, as shown in other subprojects.
@@ -47,4 +47,4 @@ A Gradio interface will open in your browser (`http://localhost:7860`). Enter an
 
 ## Why This Matters
 
-This project is a compelling example of how to build a multi‑agent pipeline on top of the OpenAI ecosystem. It's an ideal showcase for recruiters or collaborators interested in large‑scale, real‑world AI architectures.
+This project is a compelling example of how to build an asynchronous research pipeline on top of Gemini grounding. It's an ideal showcase for recruiters or collaborators interested in real‑world AI research architectures.
