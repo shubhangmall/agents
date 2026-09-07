@@ -1,7 +1,7 @@
-from google.genai import types
 from pydantic import BaseModel, Field, ValidationError
 
-from gemini_client import generate_content
+from llm_client import get_llm_client
+from provider_errors import StructuredOutputError
 
 HOW_MANY_SEARCHES = 5
 
@@ -17,7 +17,7 @@ class WebSearchPlan(BaseModel):
     )
 
 
-class PlannerStructuredOutputError(ValueError):
+class PlannerStructuredOutputError(StructuredOutputError):
     """The planner response was not valid structured output."""
 
 
@@ -50,14 +50,11 @@ async def plan_searches(query: str) -> WebSearchPlan:
         "Return only the requested JSON structure. Avoid redundant searches.\n\n"
         f"Research query: {query}"
     )
-    response = await generate_content(
+    response = await get_llm_client().generate_structured(
         prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=WebSearchPlan,
-            temperature=0.2,
-            max_output_tokens=800,
-        ),
+        schema=WebSearchPlan,
+        temperature=0.2,
+        max_tokens=800,
     )
     if isinstance(response.parsed, WebSearchPlan):
         plan = response.parsed

@@ -7,17 +7,17 @@ sdk_version: 5.44.1
 
 # Deep Research Agent
 
-A polished, full‑stack demonstration of an autonomous research assistant built and maintained by **Shubhang Mall**. This system uses Gemini to plan searches, ground concurrent web research, synthesize findings, and optionally email the final report.
+A provider-independent autonomous research assistant built and maintained by **Shubhang Mall**. It uses a configurable LLM for planning and writing, Tavily Basic for web evidence, and optional SendGrid delivery.
 
 ## How It Works
 
-- **Planner** builds a bounded search plan with Gemini 2.5 Flash.
-- **Search** runs concurrent Gemini Google Search-grounded queries and preserves source metadata.
-- **Writer** synthesizes the normalized evidence and streams a Markdown report with source IDs.
+- **Planner** builds a bounded search plan through the provider-neutral LLM client.
+- **Search** runs concurrent Tavily Basic queries and normalizes source metadata.
+- **Writer** synthesizes the evidence and streams a Markdown report with source IDs through the same LLM client.
 - **Email** (optional) can send the completed document to a specified address.
 - `ResearchManager` coordinates the above and streams status updates to the UI.
 
-The architecture showcases asynchronous workflows, native Gemini grounding, streamed report output, and clean separation of concerns between pipeline stages.
+The initial configuration uses OpenRouter's `openrouter/free` route and Tavily Basic. Groq is a configurable hosted alternative, and Ollama is a configurable local alternative. Ollama running on `localhost` cannot automatically be reached from a cloud deployment.
 
 ## Installation
 
@@ -26,8 +26,9 @@ cd deep_research
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export GEMINI_API_KEY="your_key_here"
 ```
+
+Configure the required provider variables in `.env` or the deployment environment. Deployment/shell-injected values take precedence over `.env`; never commit secrets.
 
 ## Running the App
 
@@ -37,14 +38,14 @@ python deep_research.py
 
 A Gradio interface will open in your browser (`http://localhost:7860`). Enter any topic, click **Run**, and watch the agent team generate a report over the next minute or so.
 
-Email delivery is disabled by default. To enable the optional SendGrid step, set `SEND_RESEARCH_EMAIL=true` and configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_TO_EMAIL` in `.env`. Email failures are logged server-side and do not discard a completed report.
+Email delivery is disabled by default. To enable the optional SendGrid step, set `SEND_RESEARCH_EMAIL=true` and configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_TO_EMAIL`. Email failures are logged server-side and do not discard a completed report.
 
 ## Customization & Extension
 
 - Modify `research_manager.py` to adjust orchestration logic or add new agents.
 - Add additional agent modules (e.g. `analysis_agent.py`) following the existing pattern.
-- Adjust the Gemini, Gradio, and optional SendGrid configuration through environment variables in `.env`.
+- Adjust the LLM, Tavily, Gradio, and optional SendGrid configuration through environment variables in `.env`.
 
 ## Why This Matters
 
-This project is a compelling example of how to build an asynchronous research pipeline on top of Gemini grounding. It's an ideal showcase for recruiters or collaborators interested in real‑world AI research architectures.
+This project is an example of an asynchronous research pipeline with replaceable hosted or local LLM backends, deterministic source provenance, and optional email delivery. No public cloud hosting or provider configuration is guaranteed to be free.

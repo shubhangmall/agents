@@ -27,7 +27,7 @@ class ResearchManager:
             try:
                 send_email("Deep Research report", report_text)
             except Exception:
-                logging.exception("Optional research email failed")
+                logging.error("Optional research email failed")
 
         yield "Research complete!\n\n" + report_text
 

@@ -1,7 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 
-from gemini_client import stream_content
+from llm_client import get_llm_client
 from search_agent import SearchResult
 
 
@@ -27,8 +27,9 @@ async def stream_report(query: str, search_results: list[SearchResult]) -> Async
         f"User query: {query}\n\n"
         f"Evidence:\n{_evidence_context(search_results)}"
     )
-    async for chunk in stream_content(
+    async for chunk in get_llm_client().stream_text(
         prompt,
-        config={"temperature": 0.2, "max_output_tokens": 1800},
+        temperature=0.2,
+        max_tokens=1800,
     ):
         yield chunk
