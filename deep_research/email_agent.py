@@ -10,11 +10,15 @@ def send_email(subject: str, markdown_report: str) -> dict[str, str]:
     api_key = os.environ.get("SENDGRID_API_KEY")
     if not api_key:
         raise RuntimeError("SENDGRID_API_KEY is not configured")
+    from_email = os.environ.get("SENDGRID_FROM_EMAIL")
+    to_email = os.environ.get("SENDGRID_TO_EMAIL")
+    if not from_email or not to_email:
+        raise RuntimeError("SENDGRID_FROM_EMAIL and SENDGRID_TO_EMAIL are required")
 
     sg = sendgrid.SendGridAPIClient(api_key=api_key)
     mail = Mail(
-        Email("shubhangm96@gmail.com"),
-        To("shubhangm96@gmail.com"),
+        Email(from_email),
+        To(to_email),
         subject,
         Content("text/html", f"<pre>{escape(markdown_report)}</pre>"),
     ).get()
