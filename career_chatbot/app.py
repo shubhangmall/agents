@@ -19,7 +19,11 @@ INDEX_META_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".chroma_index_meta.json"
 )
 COLLECTION_NAME = "career_context"
-EMBEDDING_MODEL = "text-embedding-3-small"
+# Local ONNX MiniLM — no API key / quota (same model as Chroma's default EF)
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# Gemini free-tier chat via OpenAI-compatible endpoint (keeps tool-calling loop)
+CHAT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
 TOP_K = 3
 SUMMARY_CHUNK_ID = "summary"
 MIN_CHUNKS_FOR_RAG = 1
@@ -215,7 +219,10 @@ tools = [
 
 class Me:
     def __init__(self):
-        self.openai = OpenAI()
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("Set GOOGLE_API_KEY for Gemini chat (free tier)")
+        self.openai = OpenAI(api_key=api_key, base_url=GEMINI_OPENAI_BASE)
         self.name = "Shubhang Mall"
         self._resume_pdf_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "me", "resume.pdf"
@@ -233,12 +240,10 @@ class Me:
         with open(self._summary_txt_path, encoding="utf-8") as f:
             self.summary = f.read()
 
-        # RAG: persistent Chroma + OpenAI embeddings; build index if empty
+        # RAG: persistent Chroma + local embeddings (startup must not hit OpenAI)
         os.makedirs(CHROMA_PATH, exist_ok=True)
         self._chroma = chromadb.PersistentClient(path=CHROMA_PATH)
-        self._ef = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"), model_name=EMBEDDING_MODEL
-        )
+        self._ef = embedding_functions.ONNXMiniLM_L6_V2()
         self._collection = self._chroma.get_or_create_collection(
             name=COLLECTION_NAME,
             embedding_function=self._ef,
@@ -433,7 +438,7 @@ If the user is engaging in discussion, try to steer them towards getting in touc
         done = False
         while not done:
             response = self.openai.chat.completions.create(
-                model="gpt-4o-mini", messages=messages, tools=tools
+                model=CHAT_MODEL, messages=messages, tools=tools
             )
             if response.choices[0].finish_reason == "tool_calls":
                 message = response.choices[0].message
