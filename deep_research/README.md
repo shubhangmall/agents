@@ -29,8 +29,6 @@ pip install -r requirements.txt
 export GEMINI_API_KEY="your_key_here"
 ```
 
-> You can also manage dependencies with `uv`/`crewai` if you prefer, as shown in other subprojects.
-
 ## Running the App
 
 ```bash
@@ -39,11 +37,13 @@ python deep_research.py
 
 A Gradio interface will open in your browser (`http://localhost:7860`). Enter any topic, click **Run**, and watch the agent team generate a report over the next minute or so.
 
+Email delivery is disabled by default. To enable the optional SendGrid step, set `SEND_RESEARCH_EMAIL=true` and configure `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `SENDGRID_TO_EMAIL` in `.env`. Email failures are logged server-side and do not discard a completed report.
+
 ## Customization & Extension
 
 - Modify `research_manager.py` to adjust orchestration logic or add new agents.
 - Add additional agent modules (e.g. `analysis_agent.py`) following the existing pattern.
-- Change notification settings via environment variables such as `PUSHOVER_TOKEN` to get mobile alerts when research completes.
+- Adjust the Gemini, Gradio, and optional SendGrid configuration through environment variables in `.env`.
 
 ## Why This Matters
 

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from email_agent import send_email
@@ -23,7 +24,10 @@ class ResearchManager:
             yield report_text
 
         if os.getenv("SEND_RESEARCH_EMAIL", "").lower() in {"1", "true", "yes"}:
-            send_email("Deep Research report", report_text)
+            try:
+                send_email("Deep Research report", report_text)
+            except Exception:
+                logging.exception("Optional research email failed")
 
         yield "Research complete!\n\n" + report_text
 
