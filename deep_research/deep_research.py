@@ -1,9 +1,8 @@
 import gradio as gr
 import logging
-from dotenv import load_dotenv
 from research_manager import ResearchManager
+from provider_errors import ProviderError, public_error_message
 
-load_dotenv(override=True)  # Load environment variables from .env file, overriding existing ones
 
 
 async def run(query: str):
@@ -11,13 +10,12 @@ async def run(query: str):
     try:
         async for chunk in ResearchManager().run(query):  # Stream status updates and final report
             yield chunk
-    except Exception as error:
-        logging.exception("Deep Research request failed")
-        error_text = str(error).upper()
-        if "429" in error_text or "RESOURCE_EXHAUSTED" in error_text:
-            yield "⚠️ **Gemini quota is currently exhausted. Please try again after the quota resets.**"
-        else:
-            yield "⚠️ **Deep Research could not complete this request. Please try again later.**"
+    except ProviderError as error:
+        logging.error("Deep Research request failed: %s", error.category)
+        yield public_error_message(error)
+    except Exception:
+        logging.error("Deep Research request failed: unexpected internal error")
+        yield "⚠️ **Deep Research could not complete this request. Please try again later.**"
 
 
 # Build Gradio UI
