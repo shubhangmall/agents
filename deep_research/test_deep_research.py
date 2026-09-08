@@ -15,6 +15,7 @@ import writer_agent
 from provider_errors import (
     ProviderConfigurationError,
     ProviderUnavailableError,
+    UnsupportedProviderCapabilityError,
     WriterStreamError,
     public_error_message,
 )
@@ -64,6 +65,12 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Relevant evidence", summary)
         self.assertNotIn("javascript:bad", summary)
 
+    def test_evidence_budget_bounds_each_summary(self):
+        hits = [SearchHit("Example", f"https://example.com/{i}", "x" * 100) for i in range(5)]
+        sources = search_agent._normalize_hits(hits)
+        summary = search_agent._evidence_summary(hits, sources, 120)
+        self.assertLessEqual(len(summary), 120)
+
     def test_missing_provider_credentials_are_sanitized(self):
         settings = config.Settings.from_env()
         missing = config.Settings(**{**settings.__dict__, "llm_provider": "openrouter", "openrouter_api_key": None})
@@ -78,11 +85,18 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                 "LLM_PROVIDER": "ollama",
                 "LLM_MODEL": "deployment-model",
                 "SEARCH_MAX_RESULTS": "3",
+                "SEARCH_EVIDENCE_MAX_CHARS": "321",
             },
         ):
             settings = config.Settings.from_env()
         self.assertEqual(settings.llm_model, "deployment-model")
         self.assertEqual(settings.search_max_results, 3)
+        self.assertEqual(settings.search_evidence_max_chars, 321)
+
+    def test_invalid_evidence_budget_fails_cleanly(self):
+        with patch.dict(os.environ, {"SEARCH_EVIDENCE_MAX_CHARS": "0"}):
+            with self.assertRaises(config.ConfigurationError):
+                config.Settings.from_env()
 
     def test_dotenv_never_overrides_deployment_environment(self):
         source = Path(config.__file__).read_text()
@@ -242,7 +256,7 @@ class WriterTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
-    async def test_openrouter_sends_json_schema_and_locally_validates(self):
+    async def test_openrouter_default_uses_json_object_and_locally_validates(self):
         class FakeResponse:
             status_code = 200
 
@@ -288,12 +302,10 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
                 "query", schema=planner_agent.WebSearchPlan
             )
         response_format = fake_client.kwargs["json"]["response_format"]
-        self.assertEqual(response_format["type"], "json_schema")
-        self.assertTrue(response_format["json_schema"]["strict"])
-        self.assertIn("properties", response_format["json_schema"]["schema"])
+        self.assertEqual(response_format, {"type": "json_object"})
         self.assertIsInstance(response.parsed, planner_agent.WebSearchPlan)
 
-    async def test_non_openrouter_providers_keep_json_object_mode(self):
+    async def test_unknown_model_is_rejected_before_http(self):
         class FakeResponse:
             status_code = 200
 
@@ -323,20 +335,21 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
             search_max_results=5,
         )
         fake_client = FakeClient()
+        settings = config.Settings(**{**settings.__dict__, "ollama_model": "unknown"})
         with patch.object(llm_client.httpx, "AsyncClient", return_value=fake_client):
-            await llm_client.LLMClient(settings).generate_structured(
-                "query", schema=planner_agent.WebSearchPlan
-            )
-        self.assertEqual(fake_client.kwargs["json"]["response_format"], {"type": "json_object"})
+            with self.assertRaises(UnsupportedProviderCapabilityError):
+                await llm_client.LLMClient(settings).generate_structured("query", schema=planner_agent.WebSearchPlan)
+        self.assertFalse(hasattr(fake_client, "kwargs"))
 
-    async def test_openrouter_default_is_free_without_paid_fallback(self):
+    async def test_openrouter_default_has_planner_safe_capability(self):
         with patch.dict(os.environ, {}, clear=True):
             settings = config.Settings.from_env()
         self.assertEqual(settings.llm_provider, "openrouter")
         self.assertEqual(settings.llm_model, "openrouter/free")
         client = llm_client.LLMClient.__new__(llm_client.LLMClient)
         client.settings = settings
-        self.assertEqual(client._model(), "openrouter/free")
+        self.assertEqual(client._capabilities()["structured"], "json_object")
+        self.assertTrue(client._capabilities()["streaming"])
 
 
 if __name__ == "__main__":

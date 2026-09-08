@@ -24,6 +24,7 @@ class Settings:
     search_provider: str
     tavily_api_key: str | None
     search_max_results: int
+    search_evidence_max_chars: int = 12000
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -33,6 +34,12 @@ class Settings:
             raise ConfigurationError("SEARCH_MAX_RESULTS must be an integer") from error
         if max_results < 1 or max_results > 5:
             raise ConfigurationError("SEARCH_MAX_RESULTS must be between 1 and 5")
+        try:
+            evidence_max_chars = int(os.getenv("SEARCH_EVIDENCE_MAX_CHARS", "12000"))
+        except ValueError as error:
+            raise ConfigurationError("SEARCH_EVIDENCE_MAX_CHARS must be an integer") from error
+        if evidence_max_chars < 1:
+            raise ConfigurationError("SEARCH_EVIDENCE_MAX_CHARS must be positive")
         provider = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
         defaults = {
             "openrouter": "openrouter/free",
@@ -57,6 +64,7 @@ class Settings:
             search_provider=search_provider,
             tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip() or None,
             search_max_results=max_results,
+            search_evidence_max_chars=evidence_max_chars,
         )
 
     def llm_api_key(self) -> str | None:

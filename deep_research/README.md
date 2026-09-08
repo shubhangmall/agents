@@ -17,7 +17,7 @@ A provider-independent autonomous research assistant built and maintained by **S
 - **Email** (optional) can send the completed document to a specified address.
 - `ResearchManager` coordinates the above and streams status updates to the UI.
 
-The initial configuration uses OpenRouter's `openrouter/free` route and Tavily Basic. Groq is a configurable hosted alternative, and Ollama is a configurable local alternative. Ollama running on `localhost` cannot automatically be reached from a cloud deployment.
+The initial configuration uses OpenRouter's `openrouter/free` route and Tavily Basic. The declared planner and streaming contract for the default route is JSON-object generation plus local Pydantic validation, and OpenAI-compatible SSE streaming. Groq (`llama-3.3-70b-versatile`) and Ollama (`llama3.2`) use the same explicit contract. Other provider/model combinations are rejected until declared. `SEARCH_EVIDENCE_MAX_CHARS` bounds each search's evidence context (default 12,000 characters). Ollama running on `localhost` cannot automatically be reached from a cloud deployment.
 
 ## Installation
 

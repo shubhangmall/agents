@@ -12,6 +12,7 @@ from provider_errors import (
     ProviderRateLimitError,
     ProviderUnavailableError,
     StructuredOutputError,
+    UnsupportedProviderCapabilityError,
     WriterStreamError,
 )
 
@@ -26,6 +27,13 @@ class _Endpoint:
 class StructuredResponse:
     text: str
     parsed: Any = None
+
+
+_CAPABILITIES = {
+    ("openrouter", "openrouter/free"): {"structured": "json_object", "streaming": True},
+    ("groq", "llama-3.3-70b-versatile"): {"structured": "json_object", "streaming": True},
+    ("ollama", "llama3.2"): {"structured": "json_object", "streaming": True},
+}
 
 
 class LLMClient:
@@ -51,6 +59,14 @@ class LLMClient:
     def _model(self) -> str:
         return self.settings.ollama_model if self.settings.llm_provider == "ollama" else self.settings.llm_model
 
+    def _capabilities(self) -> dict[str, Any]:
+        capabilities = _CAPABILITIES.get((self.settings.llm_provider, self._model()))
+        if capabilities is None:
+            raise UnsupportedProviderCapabilityError(
+                "Configured provider/model has no declared capability contract"
+            )
+        return capabilities
+
     async def _request(self, payload: dict[str, Any]) -> httpx.Response:
         endpoint = self._endpoint()
         try:
@@ -75,7 +91,8 @@ class LLMClient:
             raise ProviderUnavailableError("LLM provider request failed")
 
     def _structured_response_format(self, schema: Any) -> dict[str, Any]:
-        if self.settings.llm_provider != "openrouter" or schema is None:
+        mode = self._capabilities()["structured"]
+        if mode == "json_object" or schema is None:
             return {"type": "json_object"}
 
         try:
@@ -114,6 +131,7 @@ class LLMClient:
         temperature: float = 0.2,
         max_tokens: int = 800,
     ) -> StructuredResponse:
+        self._capabilities()
         response = await self._request(
             {
                 "model": self._model(),
@@ -145,6 +163,11 @@ class LLMClient:
         temperature: float = 0.2,
         max_tokens: int = 1800,
     ) -> AsyncIterator[str]:
+        capabilities = self._capabilities()
+        if not capabilities["streaming"]:
+            raise UnsupportedProviderCapabilityError(
+                "Configured provider/model does not support the streaming protocol"
+            )
         endpoint = self._endpoint()
         payload = {
             "model": self._model(),
