@@ -14,11 +14,12 @@ Agents in this sandbox are configured to bounce ideas off one another and refine
 
 ## Installation
 
+This experiment uses the repository-level `pyproject.toml` and `uv.lock`. From the repository root:
+
 ```bash
-cd agent_creating_agent
-python -m venv .venv
+uv sync
 source .venv/bin/activate
-pip install -r requirements.txt  # install openai, autogen, etc.
+cd agent_creating_agent
 ```
 
 > Make sure you have a `.env` file or environment variable containing `OPENAI_API_KEY`.
