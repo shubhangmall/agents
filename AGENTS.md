@@ -37,3 +37,10 @@ This repository is a collection of independent Python AI-agent experiments and a
 - Do not use browser, web, or MCP tools unless the task requires them.
 - Inspect only relevant directories/files, and avoid repo-wide scans once the relevant scope is known.
 - Do not inspect or modify sibling projects unless the task requires it.
+
+## Durable prompt decisions
+
+- Evaluators must verify external side effects from conversation or tool evidence; an assistant's unsupported success claim is not proof of completion.
+- Prompt constraints should state one explicit behavioral contract in plain, testable language rather than relying on emphasis boosters or conflicting wording.
+- Tool side effects such as logging unanswered questions or recording contact details should be triggered by relevant user intent, not ordinary conversation.
+- `agent_creating_agent/` and `personal_sidekick/` use the repository-level `pyproject.toml` and `uv.lock` for dependency setup.
