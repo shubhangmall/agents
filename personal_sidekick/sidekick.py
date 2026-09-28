@@ -63,12 +63,8 @@ class Sidekick:
 
     This is the success criteria:
     {state["success_criteria"]}
-    You should reply either with a question for the user about this assignment, or with your final response.
-    If you have a question for the user, you need to reply by clearly stating your question. An example might be:
-
-    Question: please clarify whether you want a summary or a detailed answer
-
-    If you've finished, reply with the final answer, and don't ask a question; simply reply with the answer.
+    If blocked by missing information, ask one concise clarification.
+    Otherwise, when the success criteria are met, return the completed result without an unnecessary follow-up question.
     """
 
         if state.get("feedback_on_work"):
