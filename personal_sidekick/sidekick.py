@@ -137,8 +137,8 @@ class Sidekick:
     Respond with your feedback, and decide if the success criteria is met by this response.
     Also, decide if more user input is required, either because the assistant has a question, needs clarification, or seems to be stuck and unable to answer without help.
 
-    The Assistant has access to a tool to write files. If the Assistant says they have written a file, then you can assume they have done so.
-    Overall you should give the Assistant the benefit of the doubt if they say they've done something. But you should reject if you feel that more work should go into this.
+    Judge external side effects, such as writing a file or completing a tool action, from evidence in the conversation or tool results.
+    Do not treat the Assistant's unsupported claim that an action succeeded as proof of completion. If required evidence is missing, mark the success criteria as unmet unless user input is needed.
 
     """
         if state["feedback_on_work"]:
