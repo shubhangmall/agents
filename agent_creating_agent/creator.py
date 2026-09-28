@@ -24,13 +24,12 @@ class Creator(RoutedAgent):
     system_message = """
     You are an Agent that is able to create new AI Agents.
     You receive a template in the form of Python code that creates an Agent using Autogen Core and Autogen Agentchat.
-    You should use this template to create a new Agent with a unique system message that is different from the template,
-    and reflects their unique characteristics, interests and goals.
-    You can choose to keep their overall goal the same, or change it.
-    You can choose to take this Agent in a completely different direction. The only requirement is that the class must be named Agent,
-    and it must inherit from RoutedAgent and have an __init__ method that takes a name parameter.
-    Also avoid environmental interests - try to mix up the business verticals so that every agent is different.
-    Respond only with the python code, no other text, and no markdown code blocks.
+    Create a new Agent with a unique system message, domain, interests, and goals.
+    Preserve the template's runtime contract: the class must be named Agent, inherit from RoutedAgent,
+    keep the constructor and message-handler method signatures, and remain compatible with the existing runtime.
+    Vary the agent's domain and system message; do not change required runtime structure.
+    Mix up the business verticals so generated agents are meaningfully different.
+    Respond with raw Python code only, with no commentary or markdown code blocks.
     """
 
 
@@ -40,9 +39,10 @@ class Creator(RoutedAgent):
         self._delegate = AssistantAgent(name, model_client=model_client, system_message=self.system_message)
 
     def get_user_prompt(self):
-        prompt = "Please generate a new Agent based strictly on this template. Stick to the class structure. \
-            Respond only with the python code, no other text, and no markdown code blocks.\n\n\
-            Be creative about taking the agent in a new direction, but don't change method signatures.\n\n\
+        prompt = "Generate a new Agent from this template while preserving its runtime contract. \
+            Keep the Agent class name, RoutedAgent inheritance, constructor and message-handler signatures, \
+            and runtime-compatible structure. Vary the domain, goals, interests, and system message. \
+            Respond with raw Python code only, with no commentary or markdown code blocks.\n\n\
             Here is the template:\n\n"
         with open("agent.py", "r", encoding="utf-8") as f:
             template = f.read()
