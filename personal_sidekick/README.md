@@ -4,12 +4,13 @@ A personal AI assistant built as a Gradio application. Sidekick maintains conver
 
 ## Quick Start
 
+This experiment uses the repository-level `pyproject.toml` and `uv.lock`. From the repository root:
+
 ```bash
-cd personal_sidekick
-python -m venv .venv
+uv sync
 source .venv/bin/activate
-pip install -r requirements.txt
-# Playwright tools may require additional install:
+cd personal_sidekick
+# Playwright tools may require an additional browser install:
 #   playwright install
 export OPENAI_API_KEY="your_key_here"
 ```
