@@ -12,12 +12,12 @@ from writer_agent import stream_report
 
 class ResearchManager:
     async def run(self, query: str):
-        """Run the research pipeline and yield progress/report text to Gradio.
+        """Run the research pipeline and yield progress/report chunks to Gradio.
 
-        Progress updates are timeline HTML fragments (see timeline.py) prefixed
-        with TIMELINE_MARKER so the UI can route them to a dedicated progress
-        component. Report chunks keep the original plain-markdown contract, and
-        the final chunk is still "Research complete!\\n\\n" + the full report.
+        Progress updates are TimelineUpdate events (see timeline.py), routed by
+        the UI to a dedicated progress component by type. Report chunks are
+        plain strings and keep the original markdown contract; the final chunk
+        is still "Research complete!\\n\\n" + the full report.
         """
         print("Starting research...")
         state = TimelineState(query=query)

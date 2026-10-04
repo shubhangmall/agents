@@ -1,10 +1,11 @@
 """Live research progress timeline for the Deep Research Gradio UI (ux-01).
 
-ResearchManager.run() yields these HTML fragments in place of the old coarse
-progress strings ("Searches planned...", "Searches complete..."). Every
-fragment is prefixed with TIMELINE_MARKER so the Gradio wrapper in
-deep_research.py can route it to a dedicated gr.HTML progress component while
-report chunks keep flowing to the report Markdown untouched.
+ResearchManager.run() yields TimelineUpdate events in place of the old coarse
+progress strings ("Searches planned...", "Searches complete..."). The Gradio
+wrapper in deep_research.py routes chunks to the progress component by *type*
+(isinstance check), never by inspecting text content — producing a
+TimelineUpdate requires application code, so model-generated report text can
+never be misrouted into the raw-HTML progress component.
 
 Design notes (from the verified 2026 patterns):
 - ChatGPT: a live activity surface during the run that collapses to a compact
@@ -18,8 +19,19 @@ All planner/search text is HTML-escaped before rendering.
 
 import html as _html
 import time
+from dataclasses import dataclass
 
-TIMELINE_MARKER = "<!--ux-timeline-->"
+
+@dataclass(frozen=True)
+class TimelineUpdate:
+    """A progress event for the research timeline.
+
+    Yielded by ResearchManager.run(); the UI routes these to the gr.HTML
+    progress component by type. Report text is plain str and can never
+    produce one of these, which keeps the untrusted-content boundary intact.
+    """
+
+    html: str
 
 _ACTIVE = "active"
 _DONE = "done"
@@ -221,16 +233,16 @@ def _failed_bar(state):
     )
 
 
-def render_timeline(state):
-    """Render the current TimelineState as an HTML fragment for Gradio.
+def render_timeline(state) -> TimelineUpdate:
+    """Render the current TimelineState as a progress event for Gradio.
 
-    Always prefixed with TIMELINE_MARKER so the UI wrapper can route it to
-    the dedicated progress component instead of the report Markdown.
+    Returns a TimelineUpdate (never a bare string) so the UI wrapper can
+    route progress to the raw-HTML component by type.
     """
     if state.phase == "done":
-        return TIMELINE_MARKER + _SPIN_CSS + _done_bar(state)
+        return TimelineUpdate(_SPIN_CSS + _done_bar(state))
     if state.phase == "failed":
-        return TIMELINE_MARKER + _SPIN_CSS + _failed_bar(state)
+        return TimelineUpdate(_SPIN_CSS + _failed_bar(state))
     parts = [_SPIN_CSS, _stepper(state)]
     if state.items:
         parts.append(_plan_box(state))
@@ -242,4 +254,20 @@ def render_timeline(state):
         )
     if state.phase == "write":
         parts.append(_write_box())
-    return TIMELINE_MARKER + "".join(parts)
+    return TimelineUpdate("".join(parts))
+
+
+def route_chunk(chunk, timeline_html="", report_md=""):
+    """Route one ResearchManager.run() chunk to the UI components.
+
+    Returns (timeline_html, report_md, emit). Only TimelineUpdate events —
+    which only application code can produce — reach the raw-HTML timeline;
+    plain str report text always lands in report_md, even if it contains
+    marker-like text. Unknown chunk types are dropped (emit=False) rather
+    than routed to either component.
+    """
+    if isinstance(chunk, TimelineUpdate):
+        return chunk.html, report_md, True
+    if isinstance(chunk, str):
+        return timeline_html, chunk, True
+    return timeline_html, report_md, False
