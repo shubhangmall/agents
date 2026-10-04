@@ -2,20 +2,32 @@ import gradio as gr
 import logging
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
+from timeline import TIMELINE_MARKER
 
 
 
 async def run(query: str):
-    """Run the research process and stream progress/results back to the UI"""
+    """Run the research process and stream progress/results back to the UI.
+
+    Yields (timeline_html, report_md) tuples: chunks prefixed with
+    TIMELINE_MARKER are routed to the dedicated progress component, everything
+    else streams into the report Markdown exactly as before.
+    """
+    timeline_html = ""
+    report_md = ""
     try:
         async for chunk in ResearchManager().run(query):  # Stream status updates and final report
-            yield chunk
+            if chunk.startswith(TIMELINE_MARKER):
+                timeline_html = chunk
+            else:
+                report_md = chunk
+            yield timeline_html, report_md
     except ProviderError as error:
         logging.error("Deep Research request failed: %s", error.category)
-        yield public_error_message(error)
+        yield timeline_html, public_error_message(error)
     except Exception:
         logging.error("Deep Research request failed: unexpected internal error")
-        yield "⚠️ **Deep Research could not complete this request. Please try again later.**"
+        yield timeline_html, "⚠️ **Deep Research could not complete this request. Please try again later.**"
 
 
 # Build Gradio UI
@@ -30,7 +42,8 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     gr.Markdown("This search may take up to a minute to complete. Thank you for your patience.")
     run_button = gr.Button("Run", variant="primary")  # Button to start research
     status_text = gr.Markdown("", visible=False)  # Status indicator with spinner
-    report = gr.Markdown(label="Report")  # Output area for progress and final report
+    timeline = gr.HTML(value="", label="Research progress")  # Live timeline (ux-01)
+    report = gr.Markdown(label="Report")  # Output area for the final report
 
     # Trigger research when button is clicked with button state management
     run_event = (
@@ -42,7 +55,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
             outputs=[run_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=report, show_progress="full")
+        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="full")
         .then(
             fn=lambda: (
                 gr.Button("Run", variant="primary", interactive=True),
@@ -62,7 +75,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
             outputs=[run_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=report, show_progress="full")
+        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="full")
         .then(
             fn=lambda: (
                 gr.Button("Run", variant="primary", interactive=True),
