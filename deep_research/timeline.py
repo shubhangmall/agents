@@ -39,22 +39,44 @@ _FAILED = "failed"
 
 _SPIN_CSS = (
     "<style>"
-    ".drt-spin{display:inline-block;width:12px;height:12px;border:2px solid #35507e;"
-    "border-top-color:#6ea8fe;border-radius:50%;animation:drt-rot .8s linear infinite;vertical-align:-1px}"
+    ".drt-spin{display:inline-block;width:12px;height:12px;"
+    "border:2px solid var(--border-color-primary,#35507e);"
+    "border-top-color:var(--color-accent,#6ea8fe);"
+    "border-radius:50%;animation:drt-rot .8s linear infinite;vertical-align:-1px}"
     "@keyframes drt-rot{to{transform:rotate(360deg)}}"
     ".drt-pulse{animation:drt-pul 1.6s ease-in-out infinite}"
     "@keyframes drt-pul{0%,100%{opacity:1}50%{opacity:.45}}"
+    # ux-13: tighten the timeline cards on narrow (phone-width) screens.
+    "@media (max-width:640px){"
+    ".drt-card{padding:10px 12px !important;font-size:13px !important}"
+    ".drt-row{padding:6px 8px !important}"
+    "}"
     "</style>"
 )
 
+# ux-13: surfaces, borders, and text use Gradio theme CSS variables so the
+# timeline follows the app's light/dark theme toggle. The hex values are
+# fallbacks for rendering outside a Gradio page. Accent green/red are kept as
+# literals chosen to read on both light and dark surfaces.
 _CARD = (
-    "background:#131b2c;border:1px solid #232f4b;border-radius:12px;"
-    "padding:14px 16px;margin:0 0 10px;font-size:14px;line-height:1.5"
+    "background:var(--block-background-fill,#131b2c);"
+    "border:1px solid var(--border-color-primary,#232f4b);"
+    "border-radius:12px;padding:14px 16px;margin:0 0 10px;"
+    "font-size:14px;line-height:1.5;color:var(--body-text-color,#e8edf7)"
 )
-_MUTED = "color:#8b98b8"
-_ACCENT = "color:#6ea8fe"
-_GREEN = "color:#4ade80"
-_RED = "color:#f87171"
+_MUTED = "color:var(--body-text-color-subdued,#8b98b8)"
+_ACCENT = "color:var(--color-accent,#6ea8fe)"
+_GREEN = "color:#22c55e"
+_RED = "color:#ef4444"
+
+
+def _row_style(align):
+    """Per-search row: theme-aware surface, aligned per stage box."""
+    return (
+        "display:flex;gap:10px;align-items:" + align + ";padding:8px 10px;"
+        "border:1px solid var(--block-border-color,#232f4b);border-radius:8px;"
+        "margin-bottom:6px;background:var(--background-fill-secondary,#0e1626)"
+    )
 
 
 def _esc(text):
@@ -132,7 +154,7 @@ def _stepper(state):
         elif i == idx:
             mark, color = '<span class="drt-spin"></span>', _ACCENT
         else:
-            mark, color = str(i + 1), "color:#5b6a89"
+            mark, color = str(i + 1), "color:var(--body-text-color-subdued,#5b6a89)"
         steps.append(
             f'<div style="flex:1;text-align:center;font-size:12px;font-weight:600;{color}">'
             f'<div style="margin-bottom:4px">{mark}</div>{labels[key]}</div>'
@@ -148,8 +170,7 @@ def _plan_box(state):
     rows = []
     for item in state.items:
         rows.append(
-            '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;'
-            "border:1px solid #232f4b;border-radius:8px;margin-bottom:6px;background:#0e1626\">"
+            f'<div class="drt-row" style="{_row_style("flex-start")}">'
             f'<span style="{_GREEN};font-weight:700">✓</span>'
             "<span style=\"flex:1\">"
             f"{_esc(item['query'])}"
@@ -157,7 +178,7 @@ def _plan_box(state):
             "</span></div>"
         )
     return (
-        f'<div style="{_CARD}"><div style="font-weight:700;margin-bottom:10px">'
+        f'<div class="drt-card" style="{_CARD}"><div style="font-weight:700;margin-bottom:10px">'
         f'<span style="font-size:11px;{_MUTED};text-transform:uppercase;letter-spacing:.6px">Stage 1 · </span>'
         "Research plan</div>" + "".join(rows) + "</div>"
     )
@@ -179,17 +200,17 @@ def _search_box(state):
             icon = '<span class="drt-spin"></span>'
             meta = f'<span style="font-size:12px;{_MUTED}">searching…</span>'
         rows.append(
-            '<div style="display:flex;gap:10px;align-items:center;padding:8px 10px;'
-            "border:1px solid #232f4b;border-radius:8px;margin-bottom:6px;background:#0e1626\">"
+            f'<div class="drt-row" style="{_row_style("center")}">'
             f"{icon}<span style=\"flex:1\">{_esc(item['query'])}</span>{meta}</div>"
         )
     return (
-        f'<div style="{_CARD}"><div style="font-weight:700;margin-bottom:10px">'
+        f'<div class="drt-card" style="{_CARD}"><div style="font-weight:700;margin-bottom:10px">'
         f'<span style="font-size:11px;{_MUTED};text-transform:uppercase;letter-spacing:.6px">Stage 2 · </span>'
         "Searching the web</div>"
         f'<div style="display:flex;justify-content:space-between;font-size:12px;{_MUTED};margin-bottom:6px">'
         f"<span>{done + failed} of {total} searches complete</span></div>"
-        '<div style="height:6px;background:#0c1322;border-radius:4px;overflow:hidden;margin-bottom:12px">'
+        '<div style="height:6px;background:var(--border-color-primary,#0c1322);'
+        'border-radius:4px;overflow:hidden;margin-bottom:12px">'
         f'<div style="height:100%;width:{pct}%;background:linear-gradient(90deg,#6ea8fe,#9d7bff);'
         'border-radius:4px;transition:width .4s"></div></div>'
         + "".join(rows)
@@ -199,7 +220,7 @@ def _search_box(state):
 
 def _write_box():
     return (
-        f'<div style="{_CARD}"><div style="font-weight:700;margin-bottom:6px">'
+        f'<div class="drt-card" style="{_CARD}"><div style="font-weight:700;margin-bottom:6px">'
         f'<span style="font-size:11px;{_MUTED};text-transform:uppercase;letter-spacing:.6px">Stage 3 · </span>'
         'Writing report <span class="drt-spin"></span></div>'
         f'<div class="drt-pulse" style="font-size:13px;{_MUTED}">'
@@ -210,9 +231,15 @@ def _write_box():
 def _done_bar(state):
     summary = _esc(state.summary or "")
     return (
-        '<div style="background:linear-gradient(135deg,#12271d,#14293a);'
-        "border:1px solid #1f5138;border-radius:12px;padding:12px 16px;"
-        'display:flex;align-items:center;gap:12px;font-size:14px">'
+        '<div class="drt-card" style="background:var(--block-background-fill,#131b2c);'
+        # Tint toward green; the plain declaration above stands if color-mix
+        # is unsupported, and the base border below stands likewise.
+        "background:color-mix(in srgb,#22c55e 10%,var(--block-background-fill,#131b2c));"
+        "border:1px solid var(--border-color-primary,#1f5138);"
+        "border-color:color-mix(in srgb,#22c55e 45%,var(--border-color-primary,#1f5138));"
+        "border-radius:12px;padding:12px 16px;"
+        'display:flex;align-items:center;gap:12px;font-size:14px;'
+        'color:var(--body-text-color,#e8edf7)">'
         f'<span style="{_GREEN};font-size:20px;font-weight:700">✓</span>'
         "<span><b>Research complete</b>"
         + (f'<span style="{_MUTED}"> · {summary}</span>' if summary else "")
@@ -223,9 +250,13 @@ def _done_bar(state):
 def _failed_bar(state):
     detail = _esc(state.failure_message or "")
     return (
-        '<div style="background:linear-gradient(135deg,#2a1414,#2a1a2e);'
-        "border:1px solid #7f2d2d;border-radius:12px;padding:12px 16px;"
-        'display:flex;align-items:center;gap:12px;font-size:14px">'
+        '<div class="drt-card" style="background:var(--block-background-fill,#131b2c);'
+        "background:color-mix(in srgb,#ef4444 10%,var(--block-background-fill,#131b2c));"
+        "border:1px solid var(--border-color-primary,#7f2d2d);"
+        "border-color:color-mix(in srgb,#ef4444 45%,var(--border-color-primary,#7f2d2d));"
+        "border-radius:12px;padding:12px 16px;"
+        'display:flex;align-items:center;gap:12px;font-size:14px;'
+        'color:var(--body-text-color,#e8edf7)">'
         f'<span style="{_RED};font-size:20px;font-weight:700">✕</span>'
         "<span><b>Research failed</b>"
         + (f'<span style="{_MUTED}"> · {detail}</span>' if detail else "")
@@ -249,7 +280,7 @@ def render_timeline(state) -> TimelineUpdate:
         parts.append(_search_box(state))
     else:
         parts.append(
-            f'<div style="{_CARD}"><span class="drt-spin"></span> '
+            f'<div class="drt-card" style="{_CARD}"><span class="drt-spin"></span> '
             f'<span style="{_MUTED}">Planning searches…</span></div>'
         )
     if state.phase == "write":
