@@ -6,6 +6,7 @@ from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
 from search_agent import SearchResult, search_web
+from sources import dedupe_sources, render_sources
 from timeline import TimelineState, render_timeline
 from writer_agent import stream_report
 
@@ -15,7 +16,9 @@ class ResearchManager:
         """Run the research pipeline and yield progress/report chunks to Gradio.
 
         Progress updates are TimelineUpdate events (see timeline.py), routed by
-        the UI to a dedicated progress component by type. Report chunks are
+        the UI to a dedicated progress component by type. After the search
+        phase, a SourcesUpdate event (see sources.py) carries the deduped
+        sources panel. Report chunks are
         plain strings and keep the original markdown contract; the final chunk
         is still "Research complete!\\n\\n" + the full report.
         """
@@ -76,6 +79,10 @@ class ResearchManager:
             remaining -= 1
         else:
             search_results = await search_task
+
+        # Publish the deduped sources panel as the writing stage begins, so it
+        # is visible while the report streams in.
+        yield render_sources(dedupe_sources(search_results))
 
         state.begin_writing()
         yield render_timeline(state)
