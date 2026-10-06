@@ -285,14 +285,32 @@ def render_stopped(message=""):
     return _SPIN_CSS + _stopped_bar(state)
 
 
+def _is_terminal(timeline_html):
+    """True if the timeline already shows a terminal run outcome.
+
+    The run is over when the done/failed/stopped bar is present, independent
+    of the gr.State running flag (which only flips in the trailing
+    _research_ended handler). Checking the rendered HTML closes the race
+    window between natural generator completion and that trailing handler.
+    """
+    html = timeline_html or ""
+    return (
+        "<b>Research complete</b>" in html
+        or "<b>Research failed</b>" in html
+        or "<b>Research stopped</b>" in html
+    )
+
+
 def apply_stop_banner(timeline_html, running):
     """Append the 'Research stopped' banner iff research is still running.
 
     Pure helper for the Stop button (ux-08): when Stop is clicked after the
     run already finished (or twice), the timeline must be returned unchanged
-    so a completed report is never stamped as stopped.
+    so a completed report is never stamped as stopped. The terminal-HTML
+    check covers the queue-hop window where the running flag has not flipped
+    yet but the done/failed bar is already rendered.
     """
-    if not running:
+    if not running or _is_terminal(timeline_html):
         return timeline_html
     return timeline_html + render_stopped()
 

@@ -328,3 +328,14 @@ class StopBannerTests(unittest.TestCase):
         twice = timeline.apply_stop_banner(once, False)
         self.assertEqual(twice, once)
         self.assertEqual(once.count("Research stopped"), 1)
+
+    def test_banner_not_appended_to_completed_timeline(self):
+        # The race window: running flag still True (trailing _research_ended
+        # has not run yet) but the done bar is already rendered. The banner
+        # must not be appended.
+        done_html = "<div><b>Research complete</b> · 2 searches · 4 sources</div>"
+        self.assertEqual(timeline.apply_stop_banner(done_html, True), done_html)
+
+    def test_banner_not_appended_to_failed_timeline(self):
+        failed_html = "<div><b>Research failed</b> · boom</div>"
+        self.assertEqual(timeline.apply_stop_banner(failed_html, True), failed_html)
