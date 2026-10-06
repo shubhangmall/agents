@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 from pathlib import Path
 
@@ -32,8 +32,8 @@ class Settings:
             max_results = int(os.getenv("SEARCH_MAX_RESULTS", "5"))
         except ValueError as error:
             raise ConfigurationError("SEARCH_MAX_RESULTS must be an integer") from error
-        if max_results < 1 or max_results > 5:
-            raise ConfigurationError("SEARCH_MAX_RESULTS must be between 1 and 5")
+        if max_results < 1 or max_results > 10:
+            raise ConfigurationError("SEARCH_MAX_RESULTS must be between 1 and 10")
         try:
             evidence_max_chars = int(os.getenv("SEARCH_EVIDENCE_MAX_CHARS", "12000"))
         except ValueError as error:
@@ -84,3 +84,24 @@ def require_llm_settings(settings: Settings) -> None:
 def require_search_settings(settings: Settings) -> None:
     if settings.search_provider == "tavily" and not settings.tavily_api_key:
         raise ConfigurationError("TAVILY_API_KEY is not configured")
+
+
+# UI search-depth presets (ux-12). Each maps to a search_max_results value so
+# users can trade speed for coverage per run; the env default (5) matches
+# Standard.
+SEARCH_DEPTH_PRESETS: dict[str, int] = {"Quick": 3, "Standard": 5, "Deep": 10}
+DEFAULT_SEARCH_DEPTH = "Standard"
+
+
+def search_depth_preset(name: str) -> int:
+    """Return the search_max_results value for a UI depth preset name."""
+    try:
+        return SEARCH_DEPTH_PRESETS[name]
+    except KeyError:
+        valid = ", ".join(SEARCH_DEPTH_PRESETS)
+        raise ValueError(f"Unknown search depth preset: {name!r} (expected one of: {valid})") from None
+
+
+def settings_for_depth(depth: str) -> Settings:
+    """Build per-run Settings from the environment with the depth preset applied."""
+    return replace(Settings.from_env(), search_max_results=search_depth_preset(depth))

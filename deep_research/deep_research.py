@@ -1,3 +1,4 @@
+import config
 import gradio as gr
 import logging
 from research_manager import ResearchManager
@@ -5,8 +6,7 @@ from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
 
 
-
-async def run(query: str):
+async def run(query: str, depth: str = config.DEFAULT_SEARCH_DEPTH):
     """Run the research process and stream progress/results back to the UI.
 
     Yields (timeline_html, report_md) tuples. Progress is routed to the
@@ -18,7 +18,8 @@ async def run(query: str):
     timeline_html = ""
     report_md = ""
     try:
-        async for chunk in ResearchManager().run(query):  # Stream status updates and final report
+        settings = config.settings_for_depth(depth)
+        async for chunk in ResearchManager().run(query, settings=settings):  # Stream status updates and final report
             timeline_html, report_md, emit = route_chunk(chunk, timeline_html, report_md)
             if not emit:
                 logging.error(
@@ -41,6 +42,12 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     gr.Markdown(
         "🔎 A team of **agents** will scour the web together for information and print your report below."
     )  # Informational line for user
+    depth_radio = gr.Radio(
+        choices=list(config.SEARCH_DEPTH_PRESETS),
+        value=config.DEFAULT_SEARCH_DEPTH,
+        label="Search depth",
+        info="Quick = fewer results per search, Deep = more results per search.",
+    )  # Per-run depth control (ux-12), above the query box
     query_textbox = gr.Textbox(
         label="Please enter a topic for the agent team to research."
     )  # Input field for query
@@ -60,7 +67,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
             outputs=[run_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
+        .then(fn=run, inputs=[query_textbox, depth_radio], outputs=[timeline, report], show_progress="hidden")
         .then(
             fn=lambda: (
                 gr.Button("Run", variant="primary", interactive=True),
@@ -80,7 +87,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
             outputs=[run_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
+        .then(fn=run, inputs=[query_textbox, depth_radio], outputs=[timeline, report], show_progress="hidden")
         .then(
             fn=lambda: (
                 gr.Button("Run", variant="primary", interactive=True),

@@ -155,7 +155,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         active = 0
         maximum = 0
 
-        async def fake_search(item):
+        async def fake_search(item, settings=None):
             nonlocal active, maximum
             active += 1
             maximum = max(maximum, active)
@@ -186,7 +186,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(output[-1].endswith("complete report"))
 
     async def test_search_failure_logging_is_sanitized(self):
-        async def fake_search(item):
+        async def fake_search(item, settings=None):
             raise ProviderUnavailableError("secret body https://user:password@example.com")
 
         plan = SimpleNamespace(searches=[SimpleNamespace(query="query")])

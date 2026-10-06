@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+from config import Settings
 from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
@@ -11,14 +12,18 @@ from writer_agent import stream_report
 
 
 class ResearchManager:
-    async def run(self, query: str):
+    async def run(self, query: str, settings: Settings | None = None):
         """Run the research pipeline and yield progress/report chunks to Gradio.
 
         Progress updates are TimelineUpdate events (see timeline.py), routed by
         the UI to a dedicated progress component by type. Report chunks are
         plain strings and keep the original markdown contract; the final chunk
         is still "Research complete!\\n\\n" + the full report.
+
+        settings defaults to Settings.from_env(); callers (e.g. the UI depth
+        control) may pass per-run overrides instead.
         """
+        settings = settings or Settings.from_env()
         print("Starting research...")
         state = TimelineState(query=query)
         state.begin_planning()
@@ -47,7 +52,7 @@ class ResearchManager:
             queue.put_nowait(render_timeline(state))
 
         search_task = asyncio.create_task(
-            self.perform_searches(search_plan, on_search_done=on_search_done)
+            self.perform_searches(search_plan, on_search_done=on_search_done, settings=settings)
         )
         # perform_searches invokes on_search_done exactly once per planned
         # search before returning. Race the queue against the task itself so a
@@ -112,18 +117,27 @@ class ResearchManager:
         print(f"Will perform {len(plan.searches)} searches")
         return plan
 
-    async def perform_searches(self, search_plan: WebSearchPlan, *, on_search_done=None) -> list[SearchResult]:
+    async def perform_searches(
+        self,
+        search_plan: WebSearchPlan,
+        *,
+        on_search_done=None,
+        settings: Settings | None = None,
+    ) -> list[SearchResult]:
         """Run the planned searches concurrently.
 
         on_search_done, when given, is called as on_search_done(item, result,
         completed, total) after every search; result is None when that search
         failed. It is always invoked exactly once per planned search.
+        settings defaults to Settings.from_env() and is threaded through to
+        search_web so per-run overrides (e.g. UI depth presets) take effect.
         """
         print("Searching...")
+        settings = settings or Settings.from_env()
 
         async def run_one(item):
             try:
-                return item, await search_web(item)
+                return item, await search_web(item, settings)
             except ProviderError as error:
                 print(f"Search failed: {error.category}")
                 return item, None

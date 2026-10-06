@@ -112,7 +112,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         async def fake_plan(query):
             return plan
 
-        async def fake_search(item):
+        async def fake_search(item, settings=None):
             await asyncio.sleep(0)
             if item.query in fail:
                 raise RuntimeError("mock failure")
@@ -195,7 +195,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         async def fake_plan(query):
             return plan
 
-        async def fake_search(item):
+        async def fake_search(item, settings=None):
             return SimpleNamespace(query=item.query, sources=(1,))
 
         async def failing_writer(query, results):
@@ -249,7 +249,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_perform_searches_callback_fires_once_per_item(self):
         calls = []
 
-        async def fake_search(item):
+        async def fake_search(item, settings=None):
             await asyncio.sleep(0)
             if item.query == "bad":
                 raise RuntimeError("mock failure")
