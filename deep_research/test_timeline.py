@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import research_manager
 import timeline
+from citations import CITATION_CSS
 from timeline import TimelineState, TimelineUpdate, render_timeline
 
 
@@ -221,15 +222,27 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Research failed", _html(markers[4]))
         self.assertNotIn('<span class="drt-spin">', _html(markers[4]))
         # partial report streamed before the failure, then the error propagated
+        # (citation chip CSS is prepended to streamed report chunks, ux-03)
         report_chunks = [c for c in chunks if isinstance(c, str)]
-        self.assertEqual(report_chunks, ["partial"])
+        self.assertTrue(all(c.startswith(CITATION_CSS) for c in report_chunks))
+        self.assertEqual(
+            [c[len(CITATION_CSS):] for c in report_chunks], ["partial"]
+        )
 
     async def test_run_preserves_final_report_contract(self):
         chunks = await self._run_with_mocks()
-        self.assertEqual(chunks[-1], "Research complete!\n\nchunk1chunk2")
-        # report chunks still stream as plain markdown between timeline updates
+        # streamed report chunks carry the citation chip CSS prefix (ux-03);
+        # the final chunk is still "Research complete!\n\n" + the full report
+        self.assertEqual(chunks[-1], "Research complete!\n\n" + CITATION_CSS + "chunk1chunk2")
         report_chunks = [c for c in chunks if isinstance(c, str)]
-        self.assertEqual(report_chunks, ["chunk1", "chunk1chunk2", "Research complete!\n\nchunk1chunk2"])
+        self.assertEqual(
+            report_chunks,
+            [
+                CITATION_CSS + "chunk1",
+                CITATION_CSS + "chunk1chunk2",
+                "Research complete!\n\n" + CITATION_CSS + "chunk1chunk2",
+            ],
+        )
 
     async def test_failed_search_keeps_timeline_moving(self):
         chunks = await self._run_with_mocks(fail=("q1",))
