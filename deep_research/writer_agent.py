@@ -23,7 +23,10 @@ async def stream_report(query: str, search_results: list[SearchResult]) -> Async
         "Write a grounded Markdown research report for the user's query using only the evidence "
         "below. Do not add facts that are not supported by the evidence. Cite claims with the "
         "provided source IDs in the form [source-XXXXXXXXXX]. Never invent a source ID or URL. "
-        "If the evidence is insufficient, say so plainly. Keep the report concise for a public demo.\n\n"
+        "If the evidence is insufficient, say so plainly. Keep the report concise for a public demo. "
+        "When the evidence contains comparable data points (features, prices, pros/cons, or "
+        "findings across options), present them as a Markdown table instead of prose; use tables "
+        "only when they clarify and never invent values to fill one.\n\n"
         f"User query: {query}\n\n"
         f"Evidence:\n{_evidence_context(search_results)}"
     )
