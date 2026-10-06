@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+import logging
 import os
 from pathlib import Path
 
@@ -103,5 +104,19 @@ def search_depth_preset(name: str) -> int:
 
 
 def settings_for_depth(depth: str) -> Settings:
-    """Build per-run Settings from the environment with the depth preset applied."""
-    return replace(Settings.from_env(), search_max_results=search_depth_preset(depth))
+    """Build per-run Settings from the environment with the depth preset applied.
+
+    The depth preset overrides SEARCH_MAX_RESULTS for the run: whichever
+    preset is selected in the UI sets search_max_results (Quick=3,
+    Standard=5, Deep=10), replacing the environment value. An unrecognized
+    preset name falls back to 'Standard' with a warning instead of raising,
+    so a tampered or stale radio value degrades gracefully in the UI.
+    """
+    try:
+        max_results = search_depth_preset(depth)
+    except ValueError:
+        logging.warning(
+            "Unknown search depth preset %r; falling back to 'Standard'", depth
+        )
+        max_results = search_depth_preset(DEFAULT_SEARCH_DEPTH)
+    return replace(Settings.from_env(), search_max_results=max_results)

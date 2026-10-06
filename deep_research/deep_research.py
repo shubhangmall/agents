@@ -46,7 +46,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
         choices=list(config.SEARCH_DEPTH_PRESETS),
         value=config.DEFAULT_SEARCH_DEPTH,
         label="Search depth",
-        info="Quick = fewer results per search, Deep = more results per search.",
+        info="Quick = fewer results per search, Deep = more results per search. The preset sets the results-per-search count, overriding SEARCH_MAX_RESULTS.",
     )  # Per-run depth control (ux-12), above the query box
     query_textbox = gr.Textbox(
         label="Please enter a topic for the agent team to research."

@@ -24,6 +24,16 @@ class DepthPresetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.search_depth_preset("Ultra")
 
+    def test_settings_for_depth_falls_back_to_standard_on_unknown_preset(self):
+        for bad in ("Ultra", None, "quick"):
+            with self.subTest(preset=bad), self.assertLogs(level="WARNING") as logs:
+                settings = config.settings_for_depth(bad)
+            self.assertEqual(
+                settings.search_max_results,
+                config.SEARCH_DEPTH_PRESETS[config.DEFAULT_SEARCH_DEPTH],
+            )
+            self.assertTrue(any(repr(bad) in line for line in logs.output))
+
     def test_env_default_search_max_results_is_standard(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("SEARCH_MAX_RESULTS", None)
