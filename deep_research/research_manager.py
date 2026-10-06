@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+from citations import build_citation_map, render_report_html
 from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
@@ -77,6 +78,10 @@ class ResearchManager:
         else:
             search_results = await search_task
 
+        # Numbered <-> source-ID map for citation chips (ux-03): built once
+        # the sources are final, before the writer streams the report.
+        citation_map = build_citation_map(search_results)
+
         state.begin_writing()
         yield render_timeline(state)
 
@@ -84,7 +89,7 @@ class ResearchManager:
         try:
             async for chunk in self.write_report(query, search_results):
                 report_text += chunk
-                yield report_text
+                yield render_report_html(report_text, citation_map)
         except Exception:
             # Don't leave a stuck "writing" spinner; the error still propagates
             # to the UI's error handling below.
@@ -104,7 +109,7 @@ class ResearchManager:
             except Exception:
                 logging.error("Optional research email failed")
 
-        yield "Research complete!\n\n" + report_text
+        yield "Research complete!\n\n" + render_report_html(report_text, citation_map)
 
     async def plan_searches(self, query: str) -> WebSearchPlan:
         print("Planning searches...")
