@@ -242,6 +242,22 @@ class WriterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[source-XXXXXXXXXX]", captured["prompt"])
         self.assertIn("source-1234567890", captured["prompt"])
 
+    async def test_writer_prompt_nudges_toward_markdown_tables(self):
+        captured = {}
+
+        class FakeLLM:
+            async def stream_text(self, prompt, **kwargs):
+                captured["prompt"] = prompt
+                yield "done"
+
+        with patch.object(writer_agent, "get_llm_client", return_value=FakeLLM()):
+            [chunk async for chunk in writer_agent.stream_report("query", [])]
+        prompt = captured["prompt"]
+        self.assertIn("Markdown table", prompt)
+        self.assertIn("comparable data points", prompt)
+        # The nudge must not override grounding: no invented values for tables.
+        self.assertIn("never invent values to fill one", prompt)
+
     async def test_partial_writer_failure_is_not_restarted(self):
         class FailingLLM:
             async def stream_text(self, prompt, **kwargs):
