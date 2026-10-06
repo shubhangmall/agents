@@ -306,3 +306,25 @@ class ChunkRoutingTests(unittest.TestCase):
     def test_unknown_chunk_types_are_dropped(self):
         t, r, emit = timeline.route_chunk({"x": 1}, "<b>t</b>", "md")
         self.assertEqual((t, r, emit), ("<b>t</b>", "md", False))
+
+
+class StopBannerTests(unittest.TestCase):
+    """ux-08: the Stop button must never stamp a finished run as stopped."""
+
+    def test_banner_appended_when_running(self):
+        before = "<div>timeline</div>"
+        after = timeline.apply_stop_banner(before, True)
+        self.assertTrue(after.startswith(before))
+        self.assertIn("Research stopped", after)
+
+    def test_timeline_unchanged_when_not_running(self):
+        before = "<div>timeline</div>"
+        self.assertEqual(timeline.apply_stop_banner(before, False), before)
+
+    def test_banner_appended_only_once(self):
+        # Double-clicking Stop: the second click sees running=False, so the
+        # banner must not be appended twice.
+        once = timeline.apply_stop_banner("<div>t</div>", True)
+        twice = timeline.apply_stop_banner(once, False)
+        self.assertEqual(twice, once)
+        self.assertEqual(once.count("Research stopped"), 1)

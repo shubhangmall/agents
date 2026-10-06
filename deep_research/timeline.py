@@ -285,6 +285,18 @@ def render_stopped(message=""):
     return _SPIN_CSS + _stopped_bar(state)
 
 
+def apply_stop_banner(timeline_html, running):
+    """Append the 'Research stopped' banner iff research is still running.
+
+    Pure helper for the Stop button (ux-08): when Stop is clicked after the
+    run already finished (or twice), the timeline must be returned unchanged
+    so a completed report is never stamped as stopped.
+    """
+    if not running:
+        return timeline_html
+    return timeline_html + render_stopped()
+
+
 def render_timeline(state) -> TimelineUpdate:
     """Render the current TimelineState as a progress event for Gradio.
 
