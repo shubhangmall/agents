@@ -109,7 +109,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             searches=[SimpleNamespace(query=q, reason="r") for q in queries]
         )
 
-        async def fake_plan(query):
+        async def fake_plan(query, clarifications=None):
             return plan
 
         async def fake_search(item):
@@ -171,7 +171,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_planning_failure_yields_failed_timeline_then_raises(self):
         manager = research_manager.ResearchManager()
 
-        async def boom(query):
+        async def boom(query, clarifications=None):
             raise RuntimeError("mock planning failure")
 
         with patch.object(manager, "plan_searches", boom):
@@ -192,7 +192,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         manager = research_manager.ResearchManager()
         plan = SimpleNamespace(searches=[SimpleNamespace(query="q", reason="r")])
 
-        async def fake_plan(query):
+        async def fake_plan(query, clarifications=None):
             return plan
 
         async def fake_search(item):

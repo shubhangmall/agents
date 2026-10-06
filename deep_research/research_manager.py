@@ -11,20 +11,23 @@ from writer_agent import stream_report
 
 
 class ResearchManager:
-    async def run(self, query: str):
+    async def run(self, query: str, clarifications: str | None = None):
         """Run the research pipeline and yield progress/report chunks to Gradio.
 
         Progress updates are TimelineUpdate events (see timeline.py), routed by
         the UI to a dedicated progress component by type. Report chunks are
         plain strings and keep the original markdown contract; the final chunk
         is still "Research complete!\\n\\n" + the full report.
+
+        clarifications is the optional ux-09 block of answered clarifying
+        questions; it is fed into the planner prompt and changes nothing else.
         """
         print("Starting research...")
         state = TimelineState(query=query)
         state.begin_planning()
         yield render_timeline(state)
         try:
-            search_plan = await self.plan_searches(query)
+            search_plan = await self.plan_searches(query, clarifications=clarifications)
         except Exception:
             # Don't leave a stuck "planning" spinner; the error still propagates
             # to the UI's error handling below.
@@ -106,9 +109,9 @@ class ResearchManager:
 
         yield "Research complete!\n\n" + report_text
 
-    async def plan_searches(self, query: str) -> WebSearchPlan:
+    async def plan_searches(self, query: str, clarifications: str | None = None) -> WebSearchPlan:
         print("Planning searches...")
-        plan = await plan_searches(query)
+        plan = await plan_searches(query, clarifications=clarifications)
         print(f"Will perform {len(plan.searches)} searches")
         return plan
 

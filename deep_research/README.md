@@ -11,6 +11,7 @@ A provider-independent autonomous research assistant built and maintained by **S
 
 ## How It Works
 
+- **Clarify** (optional, skippable) asks up to 3 disambiguating questions with quick-reply options before planning; answers are fed into the planner prompt.
 - **Planner** builds a bounded search plan through the provider-neutral LLM client.
 - **Search** runs concurrent Tavily Basic queries and normalizes source metadata.
 - **Writer** synthesizes the evidence and streams a Markdown report with source IDs through the same LLM client.

@@ -175,7 +175,7 @@ class OrchestrationTests(unittest.IsolatedAsyncioTestCase):
         manager = research_manager.ResearchManager()
         plan = SimpleNamespace(searches=[])
 
-        async def fake_plan(query):
+        async def fake_plan(query, clarifications=None):
             return plan
 
         async def fake_writer(query, results):

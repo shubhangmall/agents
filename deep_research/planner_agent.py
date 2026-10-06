@@ -44,12 +44,19 @@ def _parse_plan_text(text: str | None) -> WebSearchPlan:
         ) from error
 
 
-async def plan_searches(query: str) -> WebSearchPlan:
+async def plan_searches(query: str, clarifications: str | None = None) -> WebSearchPlan:
     prompt = (
         f"Create no more than {HOW_MANY_SEARCHES} distinct web searches for this research query. "
         "Return only the requested JSON structure. Avoid redundant searches.\n\n"
         f"Research query: {query}"
     )
+    if clarifications and clarifications.strip():
+        # Optional ux-09 clarifying answers: focus the searches on what the
+        # user actually wants (audience, depth, time period, scope).
+        prompt += (
+            f"\n\n{clarifications.strip()}\n"
+            "Use these answers to focus the searches on what the user wants."
+        )
     response = await get_llm_client().generate_structured(
         prompt,
         schema=WebSearchPlan,
