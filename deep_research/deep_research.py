@@ -1,8 +1,12 @@
 import gradio as gr
 import logging
+from followup import followup_questions_for
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
+
+
+MAX_FOLLOWUP_CHIPS = 4
 
 
 
@@ -50,14 +54,39 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     timeline = gr.HTML(value="", label="Research progress")  # Live timeline (ux-01)
     report = gr.Markdown(label="Report")  # Output area for the final report
 
+    # Suggested follow-up questions (ux-06): clickable chips that appear once
+    # the report is done. Clicking a chip populates the query box for a new run.
+    with gr.Row(visible=False) as followup_row:
+        gr.Markdown("💡 **Follow up:**")
+        followup_chips = [
+            gr.Button("", variant="secondary", size="sm", visible=False)
+            for _ in range(MAX_FOLLOWUP_CHIPS)
+        ]
+
+    async def make_followup_chips(query: str, report_md: str):
+        """Compute the follow-up chips after a run completes.
+
+        Returns one gr.update per chip plus the row itself. Failed or empty
+        runs keep the row hidden.
+        """
+        questions = await followup_questions_for(query, report_md)
+        chip_updates = [gr.update(value=q, visible=True) for q in questions]
+        chip_updates += [gr.update(visible=False)] * (MAX_FOLLOWUP_CHIPS - len(questions))
+        return [gr.update(visible=bool(questions))] + chip_updates
+
+    # Clicking a chip fills the query box; the user still presses Run.
+    for chip in followup_chips:
+        chip.click(fn=lambda value: value, inputs=[chip], outputs=[query_textbox])
+
     # Trigger research when button is clicked with button state management
     run_event = (
         run_button.click(
             fn=lambda: (
                 gr.Button("Processing...", variant="primary", interactive=False),
                 gr.Markdown("🔄 **Researching...**", visible=True),
+                gr.update(visible=False),
             ),
-            outputs=[run_button, status_text],
+            outputs=[run_button, status_text, followup_row],
             queue=False,
         )
         .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
@@ -67,6 +96,11 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
                 gr.Markdown("", visible=False),
             ),
             outputs=[run_button, status_text],
+        )
+        .then(
+            fn=make_followup_chips,
+            inputs=[query_textbox, report],
+            outputs=[followup_row] + followup_chips,
         )
     )
 
@@ -76,8 +110,9 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
             fn=lambda: (
                 gr.Button("Processing...", variant="primary", interactive=False),
                 gr.Markdown("🔄 **Researching...**", visible=True),
+                gr.update(visible=False),
             ),
-            outputs=[run_button, status_text],
+            outputs=[run_button, status_text, followup_row],
             queue=False,
         )
         .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
@@ -87,6 +122,11 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
                 gr.Markdown("", visible=False),
             ),
             outputs=[run_button, status_text],
+        )
+        .then(
+            fn=make_followup_chips,
+            inputs=[query_textbox, report],
+            outputs=[followup_row] + followup_chips,
         )
     )
 
