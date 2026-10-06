@@ -76,6 +76,26 @@ class StoreTests(unittest.TestCase):
     def test_delete_unknown_id_returns_false(self):
         self.assertFalse(history.delete_run("nope", path=self.path))
 
+    def test_concurrent_appends_lose_no_entries(self):
+        import threading
+
+        n_threads, n_each = 8, 25
+
+        def worker(tid):
+            for i in range(n_each):
+                history.append_run(
+                    f"q-{tid}-{i}", "r", [], path=self.path, max_entries=None
+                )
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        loaded = history.load_history(path=self.path)
+        self.assertEqual(len(loaded), n_threads * n_each)
+        self.assertEqual(len({e["query"] for e in loaded}), n_threads * n_each)
+
     def test_entry_sources_malformed_entries_are_skipped(self):
         entry = history.append_run("q", "r", ["nope", {"url": "u"}], path=self.path)
         self.assertEqual(entry["sources"], [{"title": "", "url": "u", "domain": ""}])
@@ -207,6 +227,142 @@ class ManagerHistoryTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(history, "append_run", side_effect=RuntimeError("disk")):
                 chunks = await self._run_with_mocks(manager)
             self.assertTrue(chunks[-1].endswith("complete report"))
+
+    async def test_failed_run_is_not_persisted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "history.json")
+            history.append_run("earlier", "old report", [], path=path, timestamp=100.0)
+            manager = research_manager.ResearchManager(history_path=path)
+
+            async def fake_plan(query):
+                raise RuntimeError("planner blew up")
+
+            with patch.object(manager, "plan_searches", fake_plan):
+                with self.assertRaises(RuntimeError):
+                    _ = [chunk async for chunk in manager.run("q")]
+            loaded = history.load_history(path=path)
+            self.assertEqual([e["query"] for e in loaded], ["earlier"])
+
+
+class UIGlueTests(unittest.TestCase):
+    """Tests for the session-history UI glue in deep_research.py.
+
+    deep_research builds its Gradio UI and calls ui.launch() at module
+    level, so importing it requires neutralizing the launch (and the
+    home-dir history read at import time). The glue functions under test
+    are pure and unaffected by that.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._tmp.cleanup)
+        cls._history_path = Path(cls._tmp.name) / "history.json"
+
+        # Gradio's import chain (via httpx) crashes on the bracketed IPv6
+        # entries in this sandbox's NO_PROXY; the suite needs no network.
+        cls._proxy_snapshot = {}
+        for key in [k for k in os.environ if "proxy" in k.lower()]:
+            cls._proxy_snapshot[key] = os.environ.pop(key)
+        cls.addClassCleanup(cls._restore_proxy)
+
+        import gradio as gr
+
+        cls.gr = gr
+        cls._launch_patch = patch.object(gr.Blocks, "launch", return_value=None)
+        cls._path_patch = patch.object(
+            history, "default_history_path", return_value=cls._history_path
+        )
+        cls._launch_patch.start()
+        cls._path_patch.start()
+        cls.addClassCleanup(cls._stop_patches)
+        import deep_research as dr
+
+        cls.dr = dr
+
+    @classmethod
+    def _restore_proxy(cls):
+        os.environ.update(cls._proxy_snapshot)
+
+    @classmethod
+    def _stop_patches(cls):
+        cls._path_patch.stop()
+        cls._launch_patch.stop()
+
+    def _entry(self, **overrides):
+        entry = {
+            "id": "abc123",
+            "timestamp": 1720000000.0,
+            "query": "quantum batteries",
+            "report": "# Report\n\nbody",
+            "sources": [],
+        }
+        entry.update(overrides)
+        return entry
+
+    def setUp(self):
+        # The class shares one tmp store; start each test pristine.
+        try:
+            os.remove(self._history_path)
+        except OSError:
+            pass
+
+    def test_load_history_run_unknown_id_returns_skips(self):
+        result = self.dr.load_history_run("no-such-id", [self._entry()])
+        self.assertEqual(result, (self.gr.skip(), self.gr.skip(), self.gr.skip()))
+
+    def test_load_history_run_empty_store_returns_skips(self):
+        result = self.dr.load_history_run("abc123", [])
+        self.assertEqual(result, (self.gr.skip(), self.gr.skip(), self.gr.skip()))
+
+    def test_load_history_run_restores_query_and_report(self):
+        query, banner, report = self.dr.load_history_run("abc123", [self._entry()])
+        self.assertEqual(query, "quantum batteries")
+        self.assertEqual(report, "# Report\n\nbody")
+        self.assertIn("Viewing saved run", banner)
+
+    def test_banner_escapes_timestamp(self):
+        # Pin the _html.escape(when) in the banner HTML: force strftime to
+        # emit markup and assert it comes out escaped, never raw.
+        payload = "<img src=x onerror=alert(1)>"
+        with patch("time.strftime", return_value=payload):
+            _, banner, _ = self.dr.load_history_run("abc123", [self._entry()])
+        self.assertNotIn(payload, banner)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", banner)
+
+    def test_history_choices_builds_labels(self):
+        entries = [
+            self._entry(id="a", query="quantum batteries"),
+            self._entry(id="b", query=""),
+        ]
+        choices = self.dr._history_choices(entries)
+        self.assertEqual([value for _, value in choices], ["a", "b"])
+        self.assertIn("quantum batteries", choices[0][0])
+
+    def test_history_choices_escapes_query_text(self):
+        entry = self._entry(query="<img src=x onerror=alert(1)>")
+        label = self.dr._history_choices([entry])[0][0]
+        self.assertNotIn("<img", label)
+        self.assertIn("&lt;img", label)
+
+    def test_refresh_history_returns_dropdown_and_runs(self):
+        history.append_run("q1", "r1", [], path=self._history_path, timestamp=100.0)
+        dropdown, runs = self.dr.refresh_history()
+        self.assertIsInstance(dropdown, self.gr.Dropdown)
+        self.assertEqual([e["query"] for e in runs], ["q1"])
+
+    def test_remove_history_run_deletes_and_refreshes(self):
+        entry = history.append_run("q1", "r1", [], path=self._history_path, timestamp=100.0)
+        dropdown, runs = self.dr.remove_history_run(entry["id"])
+        self.assertIsInstance(dropdown, self.gr.Dropdown)
+        self.assertEqual(runs, [])
+
+    def test_remove_history_run_empty_selection_just_refreshes(self):
+        history.append_run("q1", "r1", [], path=self._history_path, timestamp=100.0)
+        dropdown, runs = self.dr.remove_history_run(None)
+        self.assertIsInstance(dropdown, self.gr.Dropdown)
+        self.assertEqual([e["query"] for e in runs], ["q1"])
 
 
 if __name__ == "__main__":

@@ -15,11 +15,17 @@ load_history() returns entries newest-first for the dropdown.
 Only the standard library is used so this module stays importable anywhere.
 """
 
+import html
 import json
 import os
 import time
 import uuid
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    fcntl = None
 
 ENV_PATH = "DEEP_RESEARCH_HISTORY_PATH"
 DEFAULT_FILENAME = ".deep_research_history.json"
@@ -70,6 +76,35 @@ def _write_store(store, runs):
     os.replace(tmp, store)
 
 
+def _modify_store(store, mutate):
+    """Read-modify-write the store under an exclusive file lock.
+
+    `mutate(runs)` receives the current entry list and returns
+    `(new_runs, result)`; the store is rewritten with `new_runs` (still via
+    the atomic tmp+replace in _write_store) and `result` is returned.
+
+    The lock serializes concurrent appends/deletes from threads or
+    processes so no entry is silently lost. On platforms without fcntl
+    (Windows) the mutation runs unlocked.
+    """
+    store.parent.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:
+        runs = _read_store(store)
+        new_runs, result = mutate(runs)
+        _write_store(store, new_runs)
+        return result
+    lock_path = store.with_name(store.name + ".lock")
+    with open(lock_path, "w", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle, fcntl.LOCK_EX)
+        try:
+            runs = _read_store(store)
+            new_runs, result = mutate(runs)
+            _write_store(store, new_runs)
+        finally:
+            fcntl.flock(lock_handle, fcntl.LOCK_UN)
+    return result
+
+
 def load_history(path=None):
     """Return stored runs newest-first; never raises."""
     store = Path(path) if path else default_history_path()
@@ -101,49 +136,59 @@ def append_run(query, report, sources, *, path=None, timestamp=None,
     """Persist one completed run; returns the stored entry.
 
     sources is a list of {"title", "url", "domain"} dicts (see entry_sources).
-    Keeps at most max_entries runs, dropping the oldest.
+    Keeps at most max_entries runs, dropping the oldest. The read-modify-write
+    is serialized with an exclusive file lock so concurrent appends cannot
+    lose entries.
     """
     store = Path(path) if path else default_history_path()
-    runs = _read_store(store)
-    entry = {
-        "id": uuid.uuid4().hex,
-        "query": str(query or ""),
-        "timestamp": float(timestamp) if timestamp is not None else time.time(),
-        "report": str(report or ""),
-        "sources": [
-            {
-                "title": str(item.get("title", "")),
-                "url": str(item.get("url", "")),
-                "domain": str(item.get("domain", "")),
-            }
-            for item in (sources or [])
-            if isinstance(item, dict)
-        ],
-    }
-    runs.append(entry)
-    if max_entries is not None:
-        runs = runs[-max_entries:]
-    _write_store(store, runs)
-    return entry
+
+    def mutate(runs):
+        entry = {
+            "id": uuid.uuid4().hex,
+            "query": str(query or ""),
+            "timestamp": float(timestamp) if timestamp is not None else time.time(),
+            "report": str(report or ""),
+            "sources": [
+                {
+                    "title": str(item.get("title", "")),
+                    "url": str(item.get("url", "")),
+                    "domain": str(item.get("domain", "")),
+                }
+                for item in (sources or [])
+                if isinstance(item, dict)
+            ],
+        }
+        runs.append(entry)
+        if max_entries is not None:
+            runs = runs[-max_entries:]
+        return runs, entry
+
+    return _modify_store(store, mutate)
 
 
 def delete_run(entry_id, *, path=None):
     """Remove one run by id; returns True if a run was removed."""
     store = Path(path) if path else default_history_path()
-    runs = _read_store(store)
-    kept = [entry for entry in runs if entry.get("id") != entry_id]
-    if len(kept) == len(runs):
-        return False
-    _write_store(store, kept)
-    return True
+
+    def mutate(runs):
+        kept = [entry for entry in runs if entry.get("id") != entry_id]
+        return kept, len(kept) != len(runs)
+
+    return _modify_store(store, mutate)
 
 
 def entry_label(entry, max_query_len=60):
-    """Dropdown label like 'Oct 06, 2026 · 01:20 · quantum batteries'."""
+    """Dropdown label like 'Oct 06, 2026 · 01:20 · quantum batteries'.
+
+    The query is HTML-escaped (defense in depth): Gradio renders dropdown
+    labels as text today, but the label stays inert if it is ever rendered
+    as HTML.
+    """
     when = time.strftime(
         "%b %d, %Y · %H:%M", time.localtime(entry.get("timestamp", 0))
     )
     query = " ".join(str(entry.get("query", "")).split())
     if len(query) > max_query_len:
         query = query[: max_query_len - 1] + "…"
+    query = html.escape(query)
     return f"{when} · {query}" if query else when
