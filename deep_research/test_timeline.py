@@ -48,17 +48,18 @@ class TimelineRenderTests(unittest.TestCase):
     def test_search_progress_counts_completed(self):
         state = self._state()
         html = render_timeline(state).html
-        self.assertIn("0 of 2 searches complete", html)
+        self.assertIn("Searching 0/2", html)
+        self.assertIn("elapsed", html)
         state.mark_search_done("q1", ok=True, meta="3 sources")
         html = render_timeline(state).html
-        self.assertIn("1 of 2 searches complete", html)
+        self.assertIn("Searching 1/2", html)
         self.assertIn("3 sources", html)
 
     def test_failed_search_is_marked_not_dropped(self):
         state = self._state()
         state.mark_search_done("q1", ok=False)
         html = render_timeline(state).html
-        self.assertIn("1 of 2 searches complete", html)
+        self.assertIn("Searching 1/2", html)
         self.assertIn("failed", html)
 
     def test_write_stage_shows_synthesizing_message(self):
@@ -139,9 +140,9 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Research plan", _html(markers[0]))
         self.assertIn("Research plan", _html(markers[1]))
         self.assertIn("q1", _html(markers[1]))
-        self.assertIn("0 of 2 searches complete", _html(markers[1]))
-        self.assertIn("1 of 2 searches complete", _html(markers[2]))
-        self.assertIn("2 of 2 searches complete", _html(markers[3]))
+        self.assertIn("Searching 0/2", _html(markers[1]))
+        self.assertIn("Searching 1/2", _html(markers[2]))
+        self.assertIn("2/2 searches complete", _html(markers[3]))
         self.assertIn("Writing report", _html(markers[4]))
         self.assertIn("Research complete", _html(markers[5]))
         self.assertIn("2 searches · 6 sources", _html(markers[5]))
@@ -159,7 +160,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                 stages.append("done")
             elif "Synthesizing" in text:
                 stages.append("writing")
-            elif "searches complete" in text:
+            elif "Searching" in text or "searches complete" in text:
                 stages.append("searching")
             else:
                 stages.append("unknown")
@@ -236,7 +237,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         markers = _markers(chunks)
         self.assertEqual(len(markers), 6)
         self.assertIn("failed", _html(markers[3]))
-        self.assertIn("2 of 2 searches complete", _html(markers[3]))
+        self.assertIn("2/2 searches complete", _html(markers[3]))
         self.assertTrue(chunks[-1].endswith("chunk1chunk2"))
 
     async def test_empty_plan_still_completes(self):
@@ -305,3 +306,36 @@ class ChunkRoutingTests(unittest.TestCase):
     def test_unknown_chunk_types_are_dropped(self):
         t, r, emit = timeline.route_chunk({"x": 1}, "<b>t</b>", "md")
         self.assertEqual((t, r, emit), ("<b>t</b>", "md", False))
+
+
+class StopBannerTests(unittest.TestCase):
+    """ux-08: the Stop button must never stamp a finished run as stopped."""
+
+    def test_banner_appended_when_running(self):
+        before = "<div>timeline</div>"
+        after = timeline.apply_stop_banner(before, True)
+        self.assertTrue(after.startswith(before))
+        self.assertIn("Research stopped", after)
+
+    def test_timeline_unchanged_when_not_running(self):
+        before = "<div>timeline</div>"
+        self.assertEqual(timeline.apply_stop_banner(before, False), before)
+
+    def test_banner_appended_only_once(self):
+        # Double-clicking Stop: the second click sees running=False, so the
+        # banner must not be appended twice.
+        once = timeline.apply_stop_banner("<div>t</div>", True)
+        twice = timeline.apply_stop_banner(once, False)
+        self.assertEqual(twice, once)
+        self.assertEqual(once.count("Research stopped"), 1)
+
+    def test_banner_not_appended_to_completed_timeline(self):
+        # The race window: running flag still True (trailing _research_ended
+        # has not run yet) but the done bar is already rendered. The banner
+        # must not be appended.
+        done_html = "<div><b>Research complete</b> · 2 searches · 4 sources</div>"
+        self.assertEqual(timeline.apply_stop_banner(done_html, True), done_html)
+
+    def test_banner_not_appended_to_failed_timeline(self):
+        failed_html = "<div><b>Research failed</b> · boom</div>"
+        self.assertEqual(timeline.apply_stop_banner(failed_html, True), failed_html)

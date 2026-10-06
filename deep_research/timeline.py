@@ -33,6 +33,20 @@ class TimelineUpdate:
 
     html: str
 
+
+@dataclass(frozen=True)
+class SearchProgress:
+    """Per-search completion event for the native progress bar (ux-08).
+
+    Yielded by ResearchManager.run() once per planned search as it finishes
+    (failed searches count too). The Gradio wrapper routes these by type to
+    gr.Progress — rendering "Searching 2/5…" — and never to an HTML
+    component, so this carries no untrusted content.
+    """
+
+    completed: int
+    total: int
+
 _ACTIVE = "active"
 _DONE = "done"
 _FAILED = "failed"
@@ -67,10 +81,11 @@ class TimelineState:
     def __init__(self, query=""):
         self.query = query
         self.items = []  # {"query","reason","state","meta"}; state in active/done/failed
-        self.phase = "plan"  # plan|search|write|done|failed
+        self.phase = "plan"  # plan|search|write|done|failed|stopped
         self.started_at = time.monotonic()
         self.summary = None
         self.failure_message = ""
+        self.stopped_message = ""
 
     def begin_planning(self):
         """Mark the planning stage active (the initial state)."""
@@ -107,6 +122,11 @@ class TimelineState:
         """Terminal failure state (e.g. planning raised): no stuck spinner."""
         self.phase = "failed"
         self.failure_message = message
+
+    def mark_stopped(self, message="Stopped by user"):
+        """Terminal user-cancelled state (ux-08 Stop button): no stuck spinner."""
+        self.phase = "stopped"
+        self.stopped_message = message
 
     def elapsed(self):
         return time.monotonic() - self.started_at
@@ -165,7 +185,15 @@ def _plan_box(state):
 
 def _search_box(state):
     done, failed, total = state.counts()
+    finished = (done + failed) == total and total > 0
     pct = int(100 * (done + failed) / total) if total else 100
+    # ux-08: "Searching 2/5" plus a live elapsed timer while the run is alive.
+    status = (
+        f"{done + failed}/{total} searches complete"
+        if finished
+        else f"Searching {done + failed}/{total}"
+    )
+    status_line = f"{status} · {state.elapsed():.0f}s elapsed"
     rows = []
     for item in state.items:
         st = item["state"]
@@ -188,7 +216,7 @@ def _search_box(state):
         f'<span style="font-size:11px;{_MUTED};text-transform:uppercase;letter-spacing:.6px">Stage 2 · </span>'
         "Searching the web</div>"
         f'<div style="display:flex;justify-content:space-between;font-size:12px;{_MUTED};margin-bottom:6px">'
-        f"<span>{done + failed} of {total} searches complete</span></div>"
+        f"<span>{status_line}</span></div>"
         '<div style="height:6px;background:#0c1322;border-radius:4px;overflow:hidden;margin-bottom:12px">'
         f'<div style="height:100%;width:{pct}%;background:linear-gradient(90deg,#6ea8fe,#9d7bff);'
         'border-radius:4px;transition:width .4s"></div></div>'
@@ -233,6 +261,60 @@ def _failed_bar(state):
     )
 
 
+def _stopped_bar(state):
+    """Neutral (non-error) banner for a user-cancelled run (ux-08)."""
+    detail = _esc(state.stopped_message or "")
+    return (
+        '<div style="background:linear-gradient(135deg,#2a2114,#1c2333);'
+        "border:1px solid #8a6d2f;border-radius:12px;padding:12px 16px;"
+        'display:flex;align-items:center;gap:12px;font-size:14px">'
+        '<span style="color:#fbbf24;font-size:20px;font-weight:700">⏹</span>'
+        "<span><b>Research stopped</b>"
+        + (f'<span style="{_MUTED}"> · {detail}</span>' if detail else "")
+        + "</span></div>"
+    )
+
+
+def render_stopped(message=""):
+    """Standalone stopped banner HTML for the Stop-button handler (ux-08).
+
+    Appended to the last timeline HTML when the user cancels a run.
+    """
+    state = TimelineState()
+    state.mark_stopped(message)
+    return _SPIN_CSS + _stopped_bar(state)
+
+
+def _is_terminal(timeline_html):
+    """True if the timeline already shows a terminal run outcome.
+
+    The run is over when the done/failed/stopped bar is present, independent
+    of the gr.State running flag (which only flips in the trailing
+    _research_ended handler). Checking the rendered HTML closes the race
+    window between natural generator completion and that trailing handler.
+    """
+    html = timeline_html or ""
+    return (
+        "<b>Research complete</b>" in html
+        or "<b>Research failed</b>" in html
+        or "<b>Research stopped</b>" in html
+    )
+
+
+def apply_stop_banner(timeline_html, running):
+    """Append the 'Research stopped' banner iff research is still running.
+
+    Pure helper for the Stop button (ux-08): when Stop is clicked after the
+    run already finished (or twice), the timeline must be returned unchanged
+    so a completed report is never stamped as stopped. The terminal-HTML
+    check covers the queue-hop window where the running flag has not flipped
+    yet but the done/failed bar is already rendered.
+    """
+    if not running or _is_terminal(timeline_html):
+        return timeline_html
+    return timeline_html + render_stopped()
+
+
 def render_timeline(state) -> TimelineUpdate:
     """Render the current TimelineState as a progress event for Gradio.
 
@@ -243,6 +325,8 @@ def render_timeline(state) -> TimelineUpdate:
         return TimelineUpdate(_SPIN_CSS + _done_bar(state))
     if state.phase == "failed":
         return TimelineUpdate(_SPIN_CSS + _failed_bar(state))
+    if state.phase == "stopped":
+        return TimelineUpdate(_SPIN_CSS + _stopped_bar(state))
     parts = [_SPIN_CSS, _stepper(state)]
     if state.items:
         parts.append(_plan_box(state))
