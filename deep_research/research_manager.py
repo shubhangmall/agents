@@ -3,6 +3,7 @@ import logging
 import os
 
 from email_agent import send_email
+from plan_preview import PlanReady
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
 from search_agent import SearchResult, search_web
@@ -12,12 +13,31 @@ from writer_agent import stream_report
 
 class ResearchManager:
     async def run(self, query: str):
-        """Run the research pipeline and yield progress/report chunks to Gradio.
+        """Run the full research pipeline and yield progress/report chunks.
 
-        Progress updates are TimelineUpdate events (see timeline.py), routed by
-        the UI to a dedicated progress component by type. Report chunks are
-        plain strings and keep the original markdown contract; the final chunk
-        is still "Research complete!\\n\\n" + the full report.
+        Single-shot path (used by tests and non-interactive callers): runs
+        plan_phase() and feeds the resulting plan straight into
+        run_from_plan(). The outward chunk contract is unchanged — TimelineUpdate
+        events and plain report strings; the PlanReady event is consumed
+        internally and never yielded to the caller.
+        """
+        search_plan = None
+        async for chunk in self.plan_phase(query):
+            if isinstance(chunk, PlanReady):
+                search_plan = chunk.plan
+            else:
+                yield chunk
+        async for chunk in self.run_from_plan(query, search_plan):
+            yield chunk
+
+    async def plan_phase(self, query: str):
+        """Stage 1 of the two-phase flow (ux-04): plan, then pause for approval.
+
+        Yields TimelineUpdate progress events while planning, then exactly one
+        PlanReady carrying the planner's WebSearchPlan. No searching starts
+        here; the caller collects the plan, lets the user approve/edit/delete
+        /regenerate it, and continues with run_from_plan(). A planner failure
+        yields a terminal failed timeline and re-raises, same as run().
         """
         print("Starting research...")
         state = TimelineState(query=query)
@@ -33,6 +53,19 @@ class ResearchManager:
             raise
         state.set_plan([(s.query, s.reason) for s in search_plan.searches])
         yield render_timeline(state)
+        yield PlanReady(search_plan)
+
+    async def run_from_plan(self, query: str, search_plan: WebSearchPlan):
+        """Stage 2 of the two-phase flow (ux-04): execute an approved plan.
+
+        Runs the searches, streams the report, and yields TimelineUpdate
+        progress events plus plain report strings — the same chunk contract as
+        the tail of run(). The plan shown in the timeline is the approved
+        (possibly edited) one. Does not re-render the plan box first: the
+        caller (plan_phase or the approval UI) already displayed it.
+        """
+        state = TimelineState(query=query)
+        state.set_plan([(s.query, s.reason) for s in search_plan.searches])
 
         queue: asyncio.Queue = asyncio.Queue()
 

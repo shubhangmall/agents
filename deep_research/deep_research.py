@@ -1,24 +1,55 @@
 import gradio as gr
 import logging
+from plan_preview import PlanReady, plan_to_rows, rows_to_plan
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
 
+PLAN_ROWS = 5  # planner cap (planner_agent.HOW_MANY_SEARCHES); one editable row each
 
 
-async def run(query: str):
-    """Run the research process and stream progress/results back to the UI.
+def _plan_updates(timeline_html, report_md, show, rows):
+    """Build one plan() yield tuple: (timeline, report, accordion, *rows)."""
+    return (
+        timeline_html,
+        report_md,
+        gr.update(visible=show),
+        *(
+            gr.update(value=query, info=reason or None, visible=show and bool(query))
+            for query, reason in rows
+        ),
+    )
 
-    Yields (timeline_html, report_md) tuples. Progress is routed to the
-    timeline component by *type*: only TimelineUpdate events — which only
-    application code can produce — ever reach the raw-HTML component.
-    Report text is plain str and always lands in the report Markdown, even
-    if it happens to contain marker-like text.
+
+def _blank_rows():
+    return [("", "")] * PLAN_ROWS
+
+
+async def plan(query: str):
+    """Phase 1: run the planner and present the plan for approval.
+
+    Yields (timeline_html, report_md, plan_accordion, *plan_rows) tuples.
+    PlanReady events are routed by type (like TimelineUpdate): only
+    application code can produce one. No searching starts in this phase.
     """
     timeline_html = ""
     report_md = ""
+    rows = _blank_rows()
     try:
-        async for chunk in ResearchManager().run(query):  # Stream status updates and final report
+        async for chunk in ResearchManager().plan_phase(query):
+            if isinstance(chunk, PlanReady):
+                rows = (plan_to_rows(chunk.plan) + _blank_rows())[:PLAN_ROWS]
+                if any(query for query, _ in rows):
+                    yield _plan_updates(timeline_html, report_md, True, rows)
+                else:
+                    yield _plan_updates(
+                        timeline_html,
+                        "⚠️ **The planner returned an empty plan.** "
+                        "Try regenerating the plan or rephrasing your topic.",
+                        False,
+                        rows,
+                    )
+                continue
             timeline_html, report_md, emit = route_chunk(chunk, timeline_html, report_md)
             if not emit:
                 logging.error(
@@ -26,13 +57,61 @@ async def run(query: str):
                     type(chunk).__name__,
                 )
                 continue
-            yield timeline_html, report_md
+            yield _plan_updates(timeline_html, report_md, False, rows)
+    except ProviderError as error:
+        logging.error("Deep Research planning failed: %s", error.category)
+        yield _plan_updates(timeline_html, public_error_message(error), False, rows)
+    except Exception:
+        logging.error("Deep Research planning failed: unexpected internal error")
+        yield _plan_updates(
+            timeline_html,
+            "⚠️ **Deep Research could not plan this request. Please try again later.**",
+            False,
+            rows,
+        )
+
+
+async def approve_and_run(query: str, *rows):
+    """Phase 2: run the approved (possibly edited) plan.
+
+    Blank rows are dropped (clear a box to delete that search). Yields
+    (timeline_html, report_md, plan_accordion, *plan_rows) tuples; the plan
+    editor hides once the pipeline starts.
+    """
+    search_plan = rows_to_plan(rows)
+    hidden_rows = [gr.update(value="", visible=False)] * PLAN_ROWS
+    if not search_plan.searches:
+        yield (
+            gr.update(),
+            "⚠️ **No searches left in the plan.** Restore a search or regenerate "
+            "the plan, then approve again.",
+            gr.update(visible=True),
+            *hidden_rows,
+        )
+        return
+    timeline_html = ""
+    report_md = ""
+    try:
+        async for chunk in ResearchManager().run_from_plan(query, search_plan):
+            timeline_html, report_md, emit = route_chunk(chunk, timeline_html, report_md)
+            if not emit:
+                logging.error(
+                    "Deep Research yielded unexpected chunk type: %s",
+                    type(chunk).__name__,
+                )
+                continue
+            yield timeline_html, report_md, gr.update(visible=False), *hidden_rows
     except ProviderError as error:
         logging.error("Deep Research request failed: %s", error.category)
-        yield timeline_html, public_error_message(error)
+        yield timeline_html, public_error_message(error), gr.update(visible=False), *hidden_rows
     except Exception:
         logging.error("Deep Research request failed: unexpected internal error")
-        yield timeline_html, "⚠️ **Deep Research could not complete this request. Please try again later.**"
+        yield (
+            timeline_html,
+            "⚠️ **Deep Research could not complete this request. Please try again later.**",
+            gr.update(visible=False),
+            *hidden_rows,
+        )
 
 
 # Build Gradio UI
@@ -45,28 +124,45 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
         label="Please enter a topic for the agent team to research."
     )  # Input field for query
     gr.Markdown("This search may take up to a minute to complete. Thank you for your patience.")
-    run_button = gr.Button("Run", variant="primary")  # Button to start research
+    plan_button = gr.Button("1. Plan searches", variant="primary")  # Phase 1: plan only
     status_text = gr.Markdown("", visible=False)  # Status indicator with spinner
+    # Phase 1 result: editable plan checklist (ux-04). Hidden until the
+    # planner returns; no searching starts until the user approves.
+    plan_accordion = gr.Accordion("📋 Review the research plan", visible=False, open=True)
+    with plan_accordion:
+        gr.Markdown(
+            "Edit any search below, **clear a box to remove that search**, then approve — "
+            "or regenerate a fresh plan."
+        )
+        plan_boxes = [
+            gr.Textbox(label=f"Search {i + 1}", visible=False, lines=1)
+            for i in range(PLAN_ROWS)
+        ]
+        with gr.Row():
+            approve_button = gr.Button("2. Approve & research", variant="primary")
+            regen_button = gr.Button("🔄 Regenerate plan", variant="secondary")
     timeline = gr.HTML(value="", label="Research progress")  # Live timeline (ux-01)
     report = gr.Markdown(label="Report")  # Output area for the final report
 
-    # Trigger research when button is clicked with button state management
-    run_event = (
-        run_button.click(
+    plan_outputs = [timeline, report, plan_accordion, *plan_boxes]
+
+    # Phase 1: plan the searches, then show the editable plan for approval
+    plan_event = (
+        plan_button.click(
             fn=lambda: (
-                gr.Button("Processing...", variant="primary", interactive=False),
-                gr.Markdown("🔄 **Researching...**", visible=True),
+                gr.Button("Planning...", variant="primary", interactive=False),
+                gr.Markdown("🔄 **Planning searches...**", visible=True),
             ),
-            outputs=[run_button, status_text],
+            outputs=[plan_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
+        .then(fn=plan, inputs=query_textbox, outputs=plan_outputs, show_progress="hidden")
         .then(
             fn=lambda: (
-                gr.Button("Run", variant="primary", interactive=True),
+                gr.Button("1. Plan searches", variant="primary", interactive=True),
                 gr.Markdown("", visible=False),
             ),
-            outputs=[run_button, status_text],
+            outputs=[plan_button, status_text],
         )
     )
 
@@ -74,19 +170,64 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     submit_event = (
         query_textbox.submit(
             fn=lambda: (
-                gr.Button("Processing...", variant="primary", interactive=False),
-                gr.Markdown("🔄 **Researching...**", visible=True),
+                gr.Button("Planning...", variant="primary", interactive=False),
+                gr.Markdown("🔄 **Planning searches...**", visible=True),
             ),
-            outputs=[run_button, status_text],
+            outputs=[plan_button, status_text],
             queue=False,
         )
-        .then(fn=run, inputs=query_textbox, outputs=[timeline, report], show_progress="hidden")
+        .then(fn=plan, inputs=query_textbox, outputs=plan_outputs, show_progress="hidden")
         .then(
             fn=lambda: (
-                gr.Button("Run", variant="primary", interactive=True),
+                gr.Button("1. Plan searches", variant="primary", interactive=True),
                 gr.Markdown("", visible=False),
             ),
-            outputs=[run_button, status_text],
+            outputs=[plan_button, status_text],
+        )
+    )
+
+    # Phase 2: approve the (possibly edited) plan and run the pipeline
+    approve_event = (
+        approve_button.click(
+            fn=lambda: (
+                gr.Button("Researching...", variant="primary", interactive=False),
+                gr.Markdown("🔄 **Researching...**", visible=True),
+            ),
+            outputs=[approve_button, status_text],
+            queue=False,
+        )
+        .then(
+            fn=approve_and_run,
+            inputs=[query_textbox, *plan_boxes],
+            outputs=plan_outputs,
+            show_progress="hidden",
+        )
+        .then(
+            fn=lambda: (
+                gr.Button("2. Approve & research", variant="primary", interactive=True),
+                gr.Markdown("", visible=False),
+            ),
+            outputs=[approve_button, status_text],
+        )
+    )
+
+    # Regenerate: re-run the planner and present a fresh editable plan
+    regen_event = (
+        regen_button.click(
+            fn=lambda: (
+                gr.Button("Regenerating...", variant="secondary", interactive=False),
+                gr.Markdown("🔄 **Planning searches...**", visible=True),
+            ),
+            outputs=[regen_button, status_text],
+            queue=False,
+        )
+        .then(fn=plan, inputs=query_textbox, outputs=plan_outputs, show_progress="hidden")
+        .then(
+            fn=lambda: (
+                gr.Button("🔄 Regenerate plan", variant="secondary", interactive=True),
+                gr.Markdown("", visible=False),
+            ),
+            outputs=[regen_button, status_text],
         )
     )
 
