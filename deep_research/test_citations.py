@@ -112,6 +112,48 @@ class LinkifyCitationsTests(unittest.TestCase):
         out = linkify_citations("Claim. [source-aaaaa", self.cmap)
         self.assertNotIn("drc-chip", out)
 
+    def test_token_inside_markdown_link_left_untouched(self):
+        # The writer's own link wins: linkifying here used to destroy the
+        # link and leave a dangling "(url)" literal.
+        md = "see [source-aaaaaaaaaa](https://y.example) for details"
+        out = linkify_citations(md, self.cmap)
+        self.assertEqual(out, md)
+        self.assertNotIn("drc-chip", out)
+
+    def test_token_inside_link_url_left_untouched(self):
+        md = "[read more](https://y.example/?ref=[source-aaaaaaaaaa])"
+        out = linkify_citations(md, self.cmap)
+        self.assertEqual(out, md)
+        self.assertNotIn("drc-chip", out)
+
+    def test_token_inside_image_syntax_left_untouched(self):
+        md = "![source-aaaaaaaaaa](https://y.example/img.png)"
+        out = linkify_citations(md, self.cmap)
+        self.assertEqual(out, md)
+        self.assertNotIn("drc-chip", out)
+
+    def test_token_inside_inline_code_span_left_untouched(self):
+        md = "use `[source-aaaaaaaaaa]` literally"
+        out = linkify_citations(md, self.cmap)
+        self.assertEqual(out, md)
+        self.assertNotIn("drc-chip", out)
+
+    def test_token_inside_fenced_code_block_left_untouched(self):
+        md = "```\ncode [source-aaaaaaaaaa] here\n```\n\nReal claim [source-bbbbbbbbbb]."
+        out = linkify_citations(md, self.cmap)
+        self.assertIn("[source-aaaaaaaaaa]", out)  # protected
+        self.assertNotIn("[source-bbbbbbbbbb]", out)  # linkified
+        self.assertIn('href="#drc-source-2"', out)
+        self.assertEqual(out.count("drc-chip"), 1)
+
+    def test_token_before_parens_without_link_syntax_still_linkified(self):
+        # "[token] (url)" is not a Markdown link (space before paren),
+        # so the token still becomes a chip.
+        md = "see [source-aaaaaaaaaa] (https://y.example)"
+        out = linkify_citations(md, self.cmap)
+        self.assertIn('href="#drc-source-1"', out)
+        self.assertNotIn("[source-aaaaaaaaaa]", out)
+
     def test_empty_map_returns_markdown_unchanged(self):
         md = "No chips. [source-aaaaaaaaaa]"
         self.assertEqual(linkify_citations(md, {}), md)

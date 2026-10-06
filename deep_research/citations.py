@@ -10,6 +10,14 @@ Keeps a numbered <-> source-ID map (built from the search results by
 first-seen order, deduped by URL) and post-processes the streamed Markdown
 with a regex -> HTML replacement.
 
+Anchor contract (cross-PR dependency on the ux-02 sources panel):
+    Chips link to ``#drc-source-N`` where N is the 1-based number assigned
+    by ``build_citation_map`` (first-seen URL order, unsafe URLs excluded).
+    The sources panel MUST emit ``id="drc-source-N"`` on its Nth card,
+    using the same numbering, for chip clicks to jump to the card. Until
+    the panel emits those ids, chip clicks are no-ops -- but the hover
+    tooltip (title, domain, URL) keeps working regardless.
+
 Only the standard library is used so this module stays importable anywhere.
 All source text is HTML-escaped before rendering; tokens for unknown
 source IDs are left untouched so the report never gains links to sources
@@ -31,6 +39,20 @@ __all__ = [
 # The writer is instructed to cite claims as [source-XXXXXXXXXX]; real IDs
 # are "source-" + 10 hex chars (see search_agent._source_id).
 CITATION_RE = re.compile(r"\[source-([0-9a-f]{10})\]")
+
+# Segments of the report Markdown where citation tokens must NOT become
+# chips: fenced code blocks, inline code spans, and inline link/image
+# syntax. A token inside a writer-authored link (e.g. the link text of
+# `[source-...](url)`) is left to that link -- linkifying it would corrupt
+# the Markdown. A token inside a code span would render chip HTML as
+# literal tag text. An unclosed fence running to the end of the text is
+# also protected so a mid-stream chunk does not flicker chips inside a
+# code block (the next chunk re-renders from the accumulated Markdown).
+_PROTECTED_RE = re.compile(
+    r"```[\s\S]*?(?:```|$)"         # fenced code block (or unclosed fence to EOF)
+    r"|`[^`\n]+`"                    # inline code span
+    r"|!?\[[^\]\n]*\]\([^()\n]*\)",  # inline link or image
+)
 
 _CITATION_CSS = (
     "<style>"
@@ -96,6 +118,9 @@ def _chip_html(entry):
 def linkify_citations(markdown, citation_map):
     """Replace known [source-XXXXXXXXXX] tokens with clickable chips.
 
+    Tokens inside fenced code blocks, inline code spans, or Markdown
+    link/image syntax are left untouched: linkifying them would corrupt
+    the writer's own links or render chip HTML as literal tag text.
     Unknown or malformed tokens are left untouched. A mid-stream partial
     token never matches, so applying this to accumulated stream chunks is
     safe.
@@ -109,7 +134,14 @@ def linkify_citations(markdown, citation_map):
             return match.group(0)
         return _chip_html(entry)
 
-    return CITATION_RE.sub(_replace, markdown)
+    parts = []
+    pos = 0
+    for protected in _PROTECTED_RE.finditer(markdown):
+        parts.append(CITATION_RE.sub(_replace, markdown[pos:protected.start()]))
+        parts.append(protected.group(0))
+        pos = protected.end()
+    parts.append(CITATION_RE.sub(_replace, markdown[pos:]))
+    return "".join(parts)
 
 
 def render_report_html(report_markdown, citation_map):
