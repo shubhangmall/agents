@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 
+import history
 from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
@@ -11,6 +12,14 @@ from writer_agent import stream_report
 
 
 class ResearchManager:
+    def __init__(self, *, history_path=None):
+        """Create a research manager.
+
+        history_path: JSON file store used to persist completed runs so the
+        UI can offer them as session history (ux-10). None disables
+        persistence (useful for tests and embedding callers).
+        """
+        self.history_path = history_path
     async def run(self, query: str):
         """Run the research pipeline and yield progress/report chunks to Gradio.
 
@@ -104,6 +113,8 @@ class ResearchManager:
             except Exception:
                 logging.error("Optional research email failed")
 
+        self._save_history(query, report_text, search_results)
+
         yield "Research complete!\n\n" + report_text
 
     async def plan_searches(self, query: str) -> WebSearchPlan:
@@ -151,3 +162,21 @@ class ResearchManager:
         async for chunk in stream_report(query, search_results):
             yield chunk
         print("Finished writing report")
+
+    def _save_history(self, query: str, report_text: str, search_results):
+        """Persist the completed run for session history (ux-10).
+
+        Persistence must never fail a successful run: a broken history file
+        is logged, not raised.
+        """
+        if self.history_path is None:
+            return
+        try:
+            history.append_run(
+                query=query,
+                report=report_text,
+                sources=history.entry_sources(search_results),
+                path=self.history_path,
+            )
+        except Exception:
+            logging.error("Could not persist research history")
