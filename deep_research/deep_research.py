@@ -3,6 +3,7 @@ import logging
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
+from header import EXAMPLE_TOPICS, EXAMPLES_LABEL, HEADER_MARKDOWN
 
 
 
@@ -37,13 +38,19 @@ async def run(query: str):
 
 # Build Gradio UI
 with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
-    gr.Markdown("# Deep Research")  # App title
-    gr.Markdown(
-        "🔎 A team of **agents** will scour the web together for information and print your report below."
-    )  # Informational line for user
+    gr.Markdown(HEADER_MARKDOWN)  # Hero header (ux-07)
     query_textbox = gr.Textbox(
         label="Please enter a topic for the agent team to research."
     )  # Input field for query
+    gr.Markdown(EXAMPLES_LABEL)  # Example topic chips (ux-07)
+    with gr.Row():
+        example_chips = [
+            gr.Button(topic, variant="secondary", size="sm")
+            for topic in EXAMPLE_TOPICS
+        ]
+    # Clicking a chip fills the query textbox with the example topic
+    for chip in example_chips:
+        chip.click(fn=lambda value: value, inputs=chip, outputs=query_textbox)
     gr.Markdown("This search may take up to a minute to complete. Thank you for your patience.")
     run_button = gr.Button("Run", variant="primary")  # Button to start research
     status_text = gr.Markdown("", visible=False)  # Status indicator with spinner
