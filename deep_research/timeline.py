@@ -21,6 +21,8 @@ import html as _html
 import time
 from dataclasses import dataclass
 
+from sources import SourcesUpdate
+
 
 @dataclass(frozen=True)
 class TimelineUpdate:
@@ -257,17 +259,19 @@ def render_timeline(state) -> TimelineUpdate:
     return TimelineUpdate("".join(parts))
 
 
-def route_chunk(chunk, timeline_html="", report_md=""):
+def route_chunk(chunk, timeline_html="", sources_html="", report_md=""):
     """Route one ResearchManager.run() chunk to the UI components.
 
-    Returns (timeline_html, report_md, emit). Only TimelineUpdate events —
-    which only application code can produce — reach the raw-HTML timeline;
-    plain str report text always lands in report_md, even if it contains
-    marker-like text. Unknown chunk types are dropped (emit=False) rather
-    than routed to either component.
+    Returns (timeline_html, sources_html, report_md, emit). Only TimelineUpdate
+    and SourcesUpdate events — which only application code can produce — reach
+    the raw-HTML components; plain str report text always lands in report_md,
+    even if it contains marker-like text. Unknown chunk types are dropped
+    (emit=False) rather than routed to any component.
     """
     if isinstance(chunk, TimelineUpdate):
-        return chunk.html, report_md, True
+        return chunk.html, sources_html, report_md, True
+    if isinstance(chunk, SourcesUpdate):
+        return timeline_html, chunk.html, report_md, True
     if isinstance(chunk, str):
-        return timeline_html, chunk, True
-    return timeline_html, report_md, False
+        return timeline_html, sources_html, chunk, True
+    return timeline_html, sources_html, report_md, False

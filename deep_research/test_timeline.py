@@ -287,21 +287,22 @@ class ChunkRoutingTests(unittest.TestCase):
     """
 
     def test_timeline_update_routes_to_timeline_html(self):
-        t, r, emit = timeline.route_chunk(TimelineUpdate("<b>x</b>"), "", "")
-        self.assertEqual((t, r, emit), ("<b>x</b>", "", True))
+        t, s, r, emit = timeline.route_chunk(TimelineUpdate("<b>x</b>"), "", "", "")
+        self.assertEqual((t, s, r, emit), ("<b>x</b>", "", "", True))
 
     def test_report_str_routes_to_report_md(self):
-        t, r, emit = timeline.route_chunk("hello", "<b>x</b>", "")
-        self.assertEqual((t, r, emit), ("<b>x</b>", "hello", True))
+        t, s, r, emit = timeline.route_chunk("hello", "<b>x</b>", "<i>s</i>", "")
+        self.assertEqual((t, s, r, emit), ("<b>x</b>", "<i>s</i>", "hello", True))
 
     def test_marker_like_report_text_never_reaches_timeline_html(self):
         payload = "<!--ux-timeline--><img src=x onerror=alert(1)>"
         before = "<b>timeline</b>"
-        t, r, emit = timeline.route_chunk(f"# Report\n\n{payload}", before, "")
+        t, s, r, emit = timeline.route_chunk(f"# Report\n\n{payload}", before, "", "")
         self.assertTrue(emit)
         self.assertEqual(t, before)  # timeline component untouched
+        self.assertEqual(s, "")  # sources component untouched
         self.assertIn(payload, r)  # payload stays in markdown
 
     def test_unknown_chunk_types_are_dropped(self):
-        t, r, emit = timeline.route_chunk({"x": 1}, "<b>t</b>", "md")
-        self.assertEqual((t, r, emit), ("<b>t</b>", "md", False))
+        t, s, r, emit = timeline.route_chunk({"x": 1}, "<b>t</b>", "<i>s</i>", "md")
+        self.assertEqual((t, s, r, emit), ("<b>t</b>", "<i>s</i>", "md", False))
