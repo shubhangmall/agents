@@ -203,5 +203,93 @@ class PlanChunkRoutingTests(unittest.TestCase):
         self.assertTrue(hasattr(plan_preview, "PlanReady"))
 
 
+def _import_deep_research_ui():
+    """Import deep_research with the module-level ui.launch() stubbed out.
+
+    deep_research builds its Gradio UI at import time; stubbing launch keeps
+    the import side-effect free so the UI handler functions are testable.
+    """
+    import gradio as gr
+    from unittest.mock import patch
+
+    patcher = patch.object(gr.Blocks, "launch", return_value=None)
+    patcher.start()
+    try:
+        import deep_research
+
+        return deep_research
+    finally:
+        patcher.stop()
+
+
+class ApproveAndRunUITests(unittest.IsolatedAsyncioTestCase):
+    """Regression tests for the ux-04 review fixes in deep_research.py."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dr = _import_deep_research_ui()
+
+    async def test_empty_plan_keeps_rows_visible(self):
+        """Fix 1: approving an empty plan must leave the textboxes visible
+        (empty) so the user can type a search back in — not a dead accordion."""
+        chunks = [c async for c in self.dr.approve_and_run("q", "", "", "", "", "")]
+        self.assertEqual(len(chunks), 1)
+        yielded = chunks[0]
+        # (timeline, report, accordion, *5 rows)
+        self.assertEqual(len(yielded), 8)
+        self.assertTrue(yielded[2]["visible"])  # accordion stays visible
+        for row_update in yielded[3:]:
+            self.assertTrue(row_update["visible"])
+            self.assertEqual(row_update["value"], "")
+
+    async def test_empty_plan_warns_to_restore_or_regenerate(self):
+        chunks = [c async for c in self.dr.approve_and_run("q", "", "  ", None, "", "")]
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("No searches left in the plan", chunks[0][1])
+
+    async def test_approve_and_run_uses_planned_query_snapshot(self):
+        """Fix 3: the run must use the snapshotted planned query, never the
+        live query box value passed at click time."""
+        seen = {}
+
+        async def fake_run_from_plan(self, query, plan):
+            seen["query"] = query
+            return
+            yield  # make this an async generator
+
+        with patch.object(
+            self.dr.ResearchManager, "run_from_plan", fake_run_from_plan
+        ):
+            chunks = [
+                c
+                async for c in self.dr.approve_and_run(
+                    "planned query", "search one", "", "", "", ""
+                )
+            ]
+        self.assertEqual(seen["query"], "planned query")
+        self.assertEqual(chunks, [])  # no chunks from the empty fake pipeline
+
+    async def test_plan_yields_planned_query_snapshot(self):
+        """Fix 3: plan() snapshots the query it planned for as the trailing
+        yield item, feeding the gr.State the approve step reads."""
+        plan = _plan("q1", "q2")
+
+        async def fake_plan_phase(self, query):
+            yield PlanReady(plan)
+
+        with patch.object(
+            self.dr.ResearchManager, "plan_phase", fake_plan_phase
+        ):
+            chunks = [c async for c in self.dr.plan("my query")]
+        self.assertTrue(chunks)
+        # trailing item of every plan() yield is the snapshotted query
+        for chunk in chunks:
+            self.assertEqual(chunk[-1], "my query")
+        # the plan-ready yield shows the accordion with the planned rows
+        ready = chunks[-1]
+        self.assertTrue(ready[2]["visible"])
+        self.assertEqual(ready[3]["value"], "q1")
+
+
 if __name__ == "__main__":
     unittest.main()
