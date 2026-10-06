@@ -6,7 +6,7 @@ from email_agent import send_email
 from planner_agent import WebSearchPlan, plan_searches
 from provider_errors import ProviderError
 from search_agent import SearchResult, search_web
-from timeline import TimelineState, render_timeline
+from timeline import SearchProgress, TimelineState, render_timeline
 from writer_agent import stream_report
 
 
@@ -45,37 +45,62 @@ class ResearchManager:
                     meta = ""
             state.mark_search_done(item.query, ok=result is not None, meta=meta)
             queue.put_nowait(render_timeline(state))
+            # ux-08: typed per-search progress for the native Gradio bar.
+            queue.put_nowait(SearchProgress(completed=completed, total=total))
 
-        search_task = asyncio.create_task(
-            self.perform_searches(search_plan, on_search_done=on_search_done)
-        )
-        # perform_searches invokes on_search_done exactly once per planned
-        # search before returning. Race the queue against the task itself so a
-        # failed search phase surfaces its exception instead of hanging here.
-        remaining = len(search_plan.searches)
-        while remaining > 0:
-            getter = asyncio.create_task(queue.get())
-            done, pending = await asyncio.wait(
-                {getter, search_task}, return_when=asyncio.FIRST_COMPLETED
+        search_task = None
+        try:
+            search_task = asyncio.create_task(
+                self.perform_searches(search_plan, on_search_done=on_search_done)
             )
-            if search_task in done:
-                if getter in done:
-                    # The getter already consumed a queued update; deliver it
-                    # instead of dropping it.
-                    yield getter.result()
-                    remaining -= 1
-                for p in pending:
-                    p.cancel()
-                # Re-raises if the search phase itself failed.
-                search_results = search_task.result()
-                while remaining > 0 and not queue.empty():
-                    yield queue.get_nowait()
-                    remaining -= 1
-                break
-            yield getter.result()
-            remaining -= 1
-        else:
-            search_results = await search_task
+            # perform_searches invokes on_search_done exactly once per planned
+            # search before returning; each completion queues a timeline update
+            # plus a SearchProgress event. Race the queue against the task
+            # itself so a failed search phase surfaces its exception instead
+            # of hanging here.
+            total = len(search_plan.searches)
+            completed = 0
+            while completed < total or not queue.empty():
+                getter = asyncio.create_task(queue.get())
+                try:
+                    done, pending = await asyncio.wait(
+                        {getter, search_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                except BaseException:
+                    # GeneratorExit/CancelledError while waiting: drop the
+                    # queue getter so it can't outlive the run.
+                    if not getter.done():
+                        getter.cancel()
+                    raise
+                if search_task in done:
+                    if getter in done:
+                        # The getter already consumed a queued update; deliver
+                        # it instead of dropping it.
+                        chunk = getter.result()
+                        if isinstance(chunk, SearchProgress):
+                            completed = chunk.completed
+                        yield chunk
+                    for p in pending:
+                        p.cancel()
+                    # Re-raises if the search phase itself failed.
+                    search_results = search_task.result()
+                    while not queue.empty():
+                        chunk = queue.get_nowait()
+                        if isinstance(chunk, SearchProgress):
+                            completed = chunk.completed
+                        yield chunk
+                    break
+                chunk = getter.result()
+                if isinstance(chunk, SearchProgress):
+                    completed = chunk.completed
+                yield chunk
+            else:
+                search_results = await search_task
+        finally:
+            # ux-08 Stop button: this generator is aclosed when Gradio cancels
+            # the event. Don't leave in-flight searches running orphaned.
+            if search_task is not None and not search_task.done():
+                search_task.cancel()
 
         state.begin_writing()
         yield render_timeline(state)
@@ -135,19 +160,34 @@ class ResearchManager:
         results: list[SearchResult] = []
         completed = 0
         total = len(tasks)
-        for coro in asyncio.as_completed(tasks):
-            item, result = await coro
-            if result is not None:
-                results.append(result)
-            completed += 1
-            print(f"Searching... {completed}/{total} completed")
-            if on_search_done is not None:
-                on_search_done(item, result, completed, total)
+        try:
+            for coro in asyncio.as_completed(tasks):
+                item, result = await coro
+                if result is not None:
+                    results.append(result)
+                completed += 1
+                print(f"Searching... {completed}/{total} completed")
+                if on_search_done is not None:
+                    on_search_done(item, result, completed, total)
+        finally:
+            # ux-08 Stop button: cancellation must not leave searches running
+            # orphaned in the background. Cancelled tasks end in the cancelled
+            # state (run_one only catches Exception), so there is nothing to
+            # retrieve; the event loop reaps them.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
         print("Finished searching")
         return results
 
     async def write_report(self, query: str, search_results: list[SearchResult]):
         print("Writing report...")
-        async for chunk in stream_report(query, search_results):
-            yield chunk
+        stream = stream_report(query, search_results)
+        try:
+            async for chunk in stream:
+                yield chunk
+        finally:
+            # ux-08 Stop button: close the writer stream so no orphaned
+            # request keeps running after the run is cancelled.
+            await stream.aclose()
         print("Finished writing report")

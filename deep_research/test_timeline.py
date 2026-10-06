@@ -48,17 +48,18 @@ class TimelineRenderTests(unittest.TestCase):
     def test_search_progress_counts_completed(self):
         state = self._state()
         html = render_timeline(state).html
-        self.assertIn("0 of 2 searches complete", html)
+        self.assertIn("Searching 0/2", html)
+        self.assertIn("elapsed", html)
         state.mark_search_done("q1", ok=True, meta="3 sources")
         html = render_timeline(state).html
-        self.assertIn("1 of 2 searches complete", html)
+        self.assertIn("Searching 1/2", html)
         self.assertIn("3 sources", html)
 
     def test_failed_search_is_marked_not_dropped(self):
         state = self._state()
         state.mark_search_done("q1", ok=False)
         html = render_timeline(state).html
-        self.assertIn("1 of 2 searches complete", html)
+        self.assertIn("Searching 1/2", html)
         self.assertIn("failed", html)
 
     def test_write_stage_shows_synthesizing_message(self):
@@ -139,9 +140,9 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Research plan", _html(markers[0]))
         self.assertIn("Research plan", _html(markers[1]))
         self.assertIn("q1", _html(markers[1]))
-        self.assertIn("0 of 2 searches complete", _html(markers[1]))
-        self.assertIn("1 of 2 searches complete", _html(markers[2]))
-        self.assertIn("2 of 2 searches complete", _html(markers[3]))
+        self.assertIn("Searching 0/2", _html(markers[1]))
+        self.assertIn("Searching 1/2", _html(markers[2]))
+        self.assertIn("2/2 searches complete", _html(markers[3]))
         self.assertIn("Writing report", _html(markers[4]))
         self.assertIn("Research complete", _html(markers[5]))
         self.assertIn("2 searches · 6 sources", _html(markers[5]))
@@ -159,7 +160,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                 stages.append("done")
             elif "Synthesizing" in text:
                 stages.append("writing")
-            elif "searches complete" in text:
+            elif "Searching" in text or "searches complete" in text:
                 stages.append("searching")
             else:
                 stages.append("unknown")
@@ -236,7 +237,7 @@ class TimelineOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         markers = _markers(chunks)
         self.assertEqual(len(markers), 6)
         self.assertIn("failed", _html(markers[3]))
-        self.assertIn("2 of 2 searches complete", _html(markers[3]))
+        self.assertIn("2/2 searches complete", _html(markers[3]))
         self.assertTrue(chunks[-1].endswith("chunk1chunk2"))
 
     async def test_empty_plan_still_completes(self):
