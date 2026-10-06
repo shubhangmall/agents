@@ -61,10 +61,15 @@ def slugify(text):
     return slug or "section"
 
 
-def _iter_headings(markdown):
-    """Yield (level, text) for ATX headings outside fenced code blocks."""
+def _iter_heading_lines(markdown):
+    """Yield (lineno, level, text) for non-empty ATX headings outside fences.
+
+    Single source of truth for "which lines are real headings": both
+    extract_headings() and inject_heading_anchors() iterate via this helper,
+    so the Nth heading line always pairs with the Nth parsed heading.
+    """
     in_fence = False
-    for line in (markdown or "").splitlines():
+    for lineno, line in enumerate((markdown or "").splitlines()):
         if _FENCE_RE.match(line):
             in_fence = not in_fence
             continue
@@ -75,7 +80,13 @@ def _iter_headings(markdown):
             continue
         text = match.group(2).strip()
         if text:
-            yield len(match.group(1)), text
+            yield lineno, len(match.group(1)), text
+
+
+def _iter_headings(markdown):
+    """Yield (level, text) for ATX headings outside fenced code blocks."""
+    for _lineno, level, text in _iter_heading_lines(markdown):
+        yield level, text
 
 
 def extract_headings(markdown):
@@ -85,12 +96,17 @@ def extract_headings(markdown):
     is unique on the page.
     """
     headings = []
-    seen = {}
+    seen = set()  # every anchor generated so far (base and suffixed alike)
+    counts = {}
     for level, text in _iter_headings(markdown):
         base = slugify(text)
-        n = seen.get(base, 0) + 1
-        seen[base] = n
+        n = counts.get(base, 0) + 1
         anchor = base if n == 1 else f"{base}-{n}"
+        while anchor in seen:
+            n += 1
+            anchor = f"{base}-{n}"
+        counts[base] = n
+        seen.add(anchor)
         headings.append(Heading(level=level, text=text, anchor=anchor))
     return headings
 
@@ -104,17 +120,13 @@ def inject_heading_anchors(markdown):
     """
     headings = extract_headings(markdown)
     by_line = {}  # line index -> anchor, in document order
-    in_fence = False
-    idx = 0
-    for lineno, line in enumerate((markdown or "").splitlines()):
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
-            continue
-        if in_fence or idx >= len(headings):
-            continue
-        if _HEADING_RE.match(line):
-            by_line[lineno] = headings[idx].anchor
-            idx += 1
+    # Consume heading slots positionally via the same helper extract_headings
+    # uses, so empty-text lines (which extract_headings skips) can never
+    # shift the anchors of the real headings that follow them.
+    for idx, (lineno, _level, _text) in enumerate(_iter_heading_lines(markdown)):
+        if idx >= len(headings):
+            break
+        by_line[lineno] = headings[idx].anchor
     out = []
     for lineno, line in enumerate((markdown or "").splitlines()):
         if lineno in by_line:

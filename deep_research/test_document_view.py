@@ -111,6 +111,39 @@ class InjectAnchorsTests(unittest.TestCase):
         self.assertNotIn("<script>", anchor_line)
         self.assertRegex(anchor_line, r'^<a id="[a-z0-9-]+"></a>$')
 
+    def test_empty_heading_does_not_shift_later_anchors(self):
+        # Regression: an empty-text heading line ("# ") used to consume a
+        # heading slot in the injection pass while extract_headings skipped
+        # it, shifting every later anchor onto the wrong line.
+        body, headings = inject_heading_anchors("# Real\n\n# \n\n## Second\n")
+        self.assertEqual([h.anchor for h in headings], ["real", "second"])
+        lines = body.splitlines()
+        real_idx = lines.index("# Real")
+        second_idx = lines.index("## Second")
+        empty_idx = lines.index("# ")
+        self.assertEqual(lines[real_idx - 1], '<a id="real"></a>')
+        self.assertEqual(lines[second_idx - 1], '<a id="second"></a>')
+        # no anchor was injected before the empty heading line
+        self.assertNotEqual(lines[empty_idx - 1], '<a id="real"></a>')
+        self.assertNotEqual(lines[empty_idx - 1], '<a id="second"></a>')
+        self.assertEqual(body.count("<a id="), 2)
+
+    def test_duplicate_titles_never_collide_with_suffixed_anchors(self):
+        # Regression: dedupe only tracked base slugs, so ['A', 'A-2', 'A']
+        # produced ['a', 'a-2', 'a-2'] — a duplicate id on the page.
+        headings = extract_headings("# A\n\n# A-2\n\n# A\n")
+        anchors = [h.anchor for h in headings]
+        self.assertEqual(anchors, ["a", "a-2", "a-3"])
+        self.assertEqual(len(set(anchors)), len(anchors))
+
+    def test_anchor_uniqueness_holds_for_adversarial_title_mixes(self):
+        headings = extract_headings("# B\n\n# B\n\n# B-2\n\n# B\n\n# B-2\n")
+        anchors = [h.anchor for h in headings]
+        self.assertEqual(len(set(anchors)), len(anchors))
+        body, _ = inject_heading_anchors("# B\n\n# B\n\n# B-2\n\n# B\n\n# B-2\n")
+        for a in anchors:
+            self.assertEqual(body.count(f'<a id="{a}"></a>'), 1)
+
 
 class RenderTocTests(unittest.TestCase):
     def test_links_are_html_escaped(self):
