@@ -8,6 +8,7 @@ import followup
 from followup import (
     FollowupQuestions,
     build_followup_prompt,
+    chip_values,
     clean_questions,
     followup_questions_for,
     report_failed,
@@ -39,8 +40,22 @@ class CleanQuestionsTests(unittest.TestCase):
             ["Compare X with Y"],
         )
 
-    def test_caps_at_four(self):
-        self.assertEqual(len(clean_questions([f"q{i}" for i in range(10)])), 4)
+    def test_caps_at_max_suggestions(self):
+        self.assertEqual(
+            len(clean_questions([f"q{i}" for i in range(10)])),
+            followup.MAX_SUGGESTIONS,
+        )
+
+    def test_strips_html_metachars(self):
+        questions = clean_questions(
+            ["What about <script>alert(1)</script>?", "R&D budgets & <b>growth</b>"]
+        )
+        self.assertEqual(len(questions), 2)
+        for q in questions:
+            self.assertNotIn("<", q)
+            self.assertNotIn(">", q)
+            self.assertNotIn("&", q)
+        self.assertIn("script", questions[0])  # text kept, markup gone
 
     def test_caps_length(self):
         long_q = "x" * 500
@@ -66,6 +81,33 @@ class TemplateFallbackTests(unittest.TestCase):
         questions = template_fallback("   ")
         self.assertEqual(len(questions), 4)
         self.assertTrue(all("this topic" in q for q in questions))
+
+    def test_hostile_query_templates_have_no_raw_markup(self):
+        questions = template_fallback("<img src=x onerror=alert(1)>")
+        self.assertEqual(len(questions), 4)
+        for q in questions:
+            self.assertNotIn("<", q)
+            self.assertNotIn(">", q)
+            self.assertNotIn("&", q)
+
+
+class ChipValuesTests(unittest.TestCase):
+    def test_always_returns_max_suggestions_values(self):
+        for n in range(0, 8):
+            with self.subTest(n=n):
+                values = chip_values([f"q{i}" for i in range(n)])
+                self.assertEqual(len(values), followup.MAX_SUGGESTIONS)
+
+    def test_pads_short_lists_with_none(self):
+        values = chip_values(["a", "b"])
+        self.assertEqual(
+            values,
+            ["a", "b"] + [None] * (followup.MAX_SUGGESTIONS - 2),
+        )
+
+    def test_truncates_long_lists(self):
+        values = chip_values([f"q{i}" for i in range(10)])
+        self.assertEqual(values, [f"q{i}" for i in range(followup.MAX_SUGGESTIONS)])
 
 
 class BuildPromptTests(unittest.TestCase):

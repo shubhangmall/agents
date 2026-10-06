@@ -45,6 +45,17 @@ def build_followup_prompt(query: str, report_text: str) -> str:
     )
 
 
+def _strip_html_metachars(text: str) -> str:
+    """Remove HTML metacharacters from a question string.
+
+    Chip labels render as plain text (Gradio escapes button labels), but the
+    safety must be explicit here, not implicit in the renderer: these strings
+    also flow back into the query box, and a future renderer must not be able
+    to turn them into markup.
+    """
+    return text.replace("&", "").replace("<", "").replace(">", "")
+
+
 def clean_questions(raw) -> list[str]:
     """Normalize raw suggestions: strip, drop empties/dupes, cap count and length."""
     cleaned: list[str] = []
@@ -52,7 +63,7 @@ def clean_questions(raw) -> list[str]:
     for item in raw or []:
         if item is None:
             continue
-        question = str(item).strip()
+        question = _strip_html_metachars(str(item).strip())
         if len(question) > MAX_QUESTION_CHARS:
             question = question[: MAX_QUESTION_CHARS - 1].rstrip() + "…"
         key = question.lower()
@@ -139,3 +150,15 @@ async def followup_questions_for(query: str, report_text: str) -> list[str]:
     if report_failed(report_text):
         return []
     return await suggest_followups(query, report_text)
+
+
+def chip_values(questions: list[str]) -> list[str | None]:
+    """Pad/truncate to exactly MAX_SUGGESTIONS chip values (None = hidden chip).
+
+    The UI declares exactly MAX_SUGGESTIONS chip buttons and consumes exactly
+    the values returned here, so the Gradio output arity always matches by
+    construction — there is no second constant that can drift.
+    """
+    values = list(questions[:MAX_SUGGESTIONS])
+    values += [None] * (MAX_SUGGESTIONS - len(values))
+    return values

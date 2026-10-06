@@ -1,12 +1,9 @@
 import gradio as gr
 import logging
-from followup import followup_questions_for
+from followup import MAX_SUGGESTIONS, chip_values, followup_questions_for
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
-
-
-MAX_FOLLOWUP_CHIPS = 4
 
 
 
@@ -60,18 +57,21 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
         gr.Markdown("💡 **Follow up:**")
         followup_chips = [
             gr.Button("", variant="secondary", size="sm", visible=False)
-            for _ in range(MAX_FOLLOWUP_CHIPS)
+            for _ in range(MAX_SUGGESTIONS)
         ]
 
     async def make_followup_chips(query: str, report_md: str):
         """Compute the follow-up chips after a run completes.
 
-        Returns one gr.update per chip plus the row itself. Failed or empty
-        runs keep the row hidden.
+        Returns one gr.update for the row plus one per chip (chip_values
+        always yields exactly MAX_SUGGESTIONS entries, matching the declared
+        chip buttons). Failed or empty runs keep the row hidden.
         """
         questions = await followup_questions_for(query, report_md)
-        chip_updates = [gr.update(value=q, visible=True) for q in questions]
-        chip_updates += [gr.update(visible=False)] * (MAX_FOLLOWUP_CHIPS - len(questions))
+        chip_updates = [
+            gr.update(value=q, visible=True) if q is not None else gr.update(visible=False)
+            for q in chip_values(questions)
+        ]
         return [gr.update(visible=bool(questions))] + chip_updates
 
     # Clicking a chip fills the query box; the user still presses Run.
