@@ -1,5 +1,6 @@
 import gradio as gr
 import logging
+from export import export_report_file
 from research_manager import ResearchManager
 from provider_errors import ProviderError, public_error_message
 from timeline import route_chunk
@@ -49,6 +50,22 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="sky")) as ui:
     status_text = gr.Markdown("", visible=False)  # Status indicator with spinner
     timeline = gr.HTML(value="", label="Research progress")  # Live timeline (ux-01)
     report = gr.Markdown(label="Report")  # Output area for the final report
+    # One-click export (ux-05): download the report as .md or copy it.
+    with gr.Row():
+        download_btn = gr.DownloadButton("Download .md", variant="secondary", size="sm")
+        copy_btn = gr.Button("Copy report", variant="secondary", size="sm")
+
+    # Download: write the current report markdown to a temp .md file and serve
+    # it; the file downloads under its basename.
+    download_btn.click(
+        fn=export_report_file, inputs=[report], outputs=[download_btn]
+    )
+    # Copy: pure client-side clipboard write, no backend round-trip.
+    copy_btn.click(
+        fn=None,
+        inputs=[report],
+        js="(md) => { navigator.clipboard.writeText(md || ''); }",
+    )
 
     # Trigger research when button is clicked with button state management
     run_event = (
